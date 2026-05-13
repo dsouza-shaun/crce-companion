@@ -1,0 +1,14 @@
+[project]
+name = "crce-companion"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "beautifulsoup4>=4.14.3",
+    "psycopg2-binary>=2.9.12",
+    "python-dotenv>=1.2.2",
+    "pytz>=2026.2",
+    "resend>=2.30.0",
+    "streamlit>=1.57.0",
+    "streamlit-local-storage>=0.0.25",
+    "tqdm>=4.67.3",
+]
