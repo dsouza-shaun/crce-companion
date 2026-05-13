@@ -47,15 +47,30 @@ def run_application():
 
     print(f"\n--- Attempting Login for: {current_full_name} (PRN: {current_prn}) ---")
     
-    session, welcome_page_html = web_scraper.login_and_get_welcome_page(
-        current_prn, 
-        current_dob_day, 
-        current_dob_month,
-        current_dob_year,
-        current_full_name 
-    )
+    # Ask which semester portal to use
+    sem_choice = input("Select semester portal (even/odd/both): ").strip().lower()
+    if sem_choice not in ("even", "odd", "both"):
+        sem_choice = "even"
+    
+    sem_types = ["even", "odd"] if sem_choice == "both" else [sem_choice]
 
-    if session and welcome_page_html:
+    for sem_type in sem_types:
+        login_url = config.get_login_url(sem_type)
+        portal_label = "Odd" if sem_type == "odd" else "Even"
+        print(f"\n--- Trying {portal_label} Semester Portal ---")
+
+        session, welcome_page_html = web_scraper.login_and_get_welcome_page(
+            current_prn, 
+            current_dob_day, 
+            current_dob_month,
+            current_dob_year,
+            current_full_name,
+            login_url=login_url
+        )
+
+        if not (session and welcome_page_html):
+            print(f"Login FAILED for {portal_label} portal.")
+            continue
         # You might want to save the debug page only if a specific debug flag is set
         # with open("debug_welcome_page_from_script.html", "w", encoding="utf-8") as f:
         #     f.write(welcome_page_html)
@@ -72,7 +87,7 @@ def run_application():
         else:
             print("\nCould not extract attendance data.")
 
-        cie_marks_records = web_scraper.extract_cie_marks(welcome_page_html)
+        cie_marks_records = web_scraper.extract_cie_marks(session, welcome_page_html, base_url=login_url)
         if cie_marks_records:
             print("\n--- Extracted and Filtered CIE Marks Data (with Totals) ---")
             for subject_code, marks_dict in cie_marks_records.items():
@@ -125,8 +140,6 @@ def run_application():
                 print("-" * 20) 
         else:
             print("\nCould not extract CIE marks data.")
-    else:
-        print("\nLogin FAILED or welcome page not retrieved correctly.")
 
 if __name__ == "__main__":
     run_application()

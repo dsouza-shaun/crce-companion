@@ -5,15 +5,16 @@ import re
 from urllib.parse import urljoin # Moved import here
 import config # Import your config file
 
-def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_name_for_check):
+def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_name_for_check, login_url=None):
+    if login_url is None:
+        login_url = config.LOGIN_URL
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36",
-        "Referer": config.LOGIN_URL
+        "Referer": login_url
     })
     try:
-        # print(f"Navigating to login page: {config.LOGIN_URL}")
-        response_get = session.get(config.LOGIN_URL, timeout=20)
+        response_get = session.get(login_url, timeout=20)
         response_get.raise_for_status()
         # print("Successfully fetched login page.")
         soup_login = BeautifulSoup(response_get.content, "html.parser")
@@ -45,9 +46,9 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
             # print("No hidden input fields found in the login form (id='login-form').")
         # print(f"Payload to be sent: {payload}")
         form_action = login_form.get("action")
-        actual_post_url = config.FORM_ACTION_URL
+        actual_post_url = login_url
         if form_action:
-            actual_post_url = urljoin(config.LOGIN_URL, form_action)
+            actual_post_url = urljoin(login_url, form_action)
         # print(f"Attempting to POST login data to: {actual_post_url}")
         response_post = session.post(actual_post_url, data=payload, timeout=20)
         response_post.raise_for_status()
@@ -173,13 +174,15 @@ def extract_cie_marks(welcome_page_html):
         return None
     return cie_data
 
-def extract_detailed_attendance_info(session, welcome_page_html):
+def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
     """
     Parses the welcome page to find links to detailed attendance pages.
     This version handles THREE layouts and returns a DICTIONARY to match the old app structure.
     """
     if not welcome_page_html or not session:
         return {}
+    if base_url is None:
+        base_url = config.LOGIN_URL
 
     soup = BeautifulSoup(welcome_page_html, "html.parser")
     detailed_data = {}
@@ -209,7 +212,7 @@ def extract_detailed_attendance_info(session, welcome_page_html):
                 link_tag = row.find("a", href=re.compile(r"task=attendencelist"))
                 
                 if link_tag and subject_code:
-                    details = _scrape_attendance_detail_page(session, link_tag['href'])
+                    details = _scrape_attendance_detail_page(session, link_tag['href'], base_url=base_url)
                     detailed_data[subject_code] = details
                     
             except Exception as e:
@@ -228,7 +231,7 @@ def extract_detailed_attendance_info(session, welcome_page_html):
                 subject_code = link_tag.text.strip() # Strip whitespace
                 
                 if link_tag.has_attr('href') and subject_code:
-                    details = _scrape_attendance_detail_page(session, link_tag['href'])
+                    details = _scrape_attendance_detail_page(session, link_tag['href'], base_url=base_url)
                     detailed_data[subject_code] = details
                     
             except Exception as e:
@@ -238,10 +241,12 @@ def extract_detailed_attendance_info(session, welcome_page_html):
     print("CRITICAL: Could not find attendance data using any known layout.")
     return {}
 
-def _scrape_attendance_detail_page(session, url):
+def _scrape_attendance_detail_page(session, url, base_url=None):
     """ Helper function to visit a detail page and extract Present/Absent numbers. """
+    if base_url is None:
+        base_url = config.LOGIN_URL
     try:
-        response = session.get(urljoin(config.LOGIN_URL, url), timeout=30)
+        response = session.get(urljoin(base_url, url), timeout=30)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, "html.parser")
         present_text = soup.find("span", class_="cn-color-green").text if soup.find("span", class_="cn-color-green") else ""

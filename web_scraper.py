@@ -4,15 +4,17 @@ import re
 from urllib.parse import urljoin
 import config
 
-def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_name_for_check):
+def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_name_for_check, login_url=None):
+    if login_url is None:
+        login_url = config.LOGIN_URL
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Safari/537.36",
-        "Referer": config.LOGIN_URL
+        "Referer": login_url
     })
     try:
         # 1. GET Login Page
-        response_get = session.get(config.LOGIN_URL, timeout=20)
+        response_get = session.get(login_url, timeout=20)
         response_get.raise_for_status()
         soup_login = BeautifulSoup(response_get.content, "html.parser")
         login_form = soup_login.find("form", {"id": "login-form"})
@@ -39,7 +41,7 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
 
         # 3. POST Login
         form_action = login_form.get("action")
-        actual_post_url = urljoin(config.LOGIN_URL, form_action) if form_action else config.FORM_ACTION_URL
+        actual_post_url = urljoin(login_url, form_action) if form_action else login_url
         
         response_post = session.post(actual_post_url, data=payload, timeout=20)
         response_post.raise_for_status()
@@ -168,8 +170,10 @@ def _parse_table_marks_safely(soup):
                         except: pass
     return table_marks
 
-def scrape_subject_detail_page(session, url):
-    full_url = urljoin(config.LOGIN_URL, url)
+def scrape_subject_detail_page(session, url, base_url=None):
+    if base_url is None:
+        base_url = config.LOGIN_URL
+    full_url = urljoin(base_url, url)
     try:
         response = session.get(full_url, timeout=15)
         html = response.text
@@ -219,23 +223,25 @@ def scrape_subject_detail_page(session, url):
         print(f"Error scraping detail page {url}: {e}")
         return {}
 
-def extract_cie_marks(session, html_content=None):
+def extract_cie_marks(session, html_content=None, base_url=None):
     if not isinstance(session, requests.Session): return {}
     all_subjects_data = {}
     subject_links = get_cie_detail_urls(html_content)
     
     for subject, url in subject_links.items():
         subject = subject.strip()
-        marks = scrape_subject_detail_page(session, url)
+        marks = scrape_subject_detail_page(session, url, base_url=base_url)
         if marks:
             all_subjects_data[subject] = marks
     return all_subjects_data
 
-def extract_detailed_attendance_info(session, welcome_page_html):
+def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
     """
     Extracts detailed attendance (Conducted vs Attended).
     """
     if not welcome_page_html or not session: return {}
+    if base_url is None:
+        base_url = config.LOGIN_URL
 
     soup = BeautifulSoup(welcome_page_html, "html.parser")
     detailed_data = {}
@@ -249,7 +255,7 @@ def extract_detailed_attendance_info(session, welcome_page_html):
                 if cols:
                     subject = cols[0].get_text(strip=True)
                     try:
-                        full_url = urljoin(config.LOGIN_URL, link['href'])
+                        full_url = urljoin(base_url, link['href'])
                         resp = session.get(full_url, timeout=10)
                         det_soup = BeautifulSoup(resp.content, "html.parser")
                         

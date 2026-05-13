@@ -3,13 +3,12 @@ import os
 
 NEON_DB_PASSWORD = os.environ.get("NEON_DB_PASSWORD")
 
-# Critical check: Ensure password was actually loaded
 if NEON_DB_PASSWORD is None:
     import sys
     sys.exit("Database password not configured. Exiting.")
 
-# Construct the connection string using the (hopefully) loaded password
-PG_HOST = os.environ.get("NEON_DB_URI", "ep-spring-voice-a1yre8if-pooler.ap-southeast-1.aws.neon.tech")
+# Construct the connection string using the password
+PG_HOST = os.environ.get("NEON_DB_URI")
 PG_DBNAME = os.environ.get("PG_DBNAME", "neondb")
 PG_USER = os.environ.get("PG_USER", "neondb_owner")
 
@@ -17,8 +16,19 @@ NEON_CONNECTION_STRING = f"postgresql://{PG_USER}:{NEON_DB_PASSWORD}@{PG_HOST}/{
 
 
 # --- Portal Configuration ---
-LOGIN_URL = "https://crce-students.contineo.in/parents/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
+LOGIN_URL_EVEN = "https://crce-students.contineo.in/parents/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
+LOGIN_URL_ODD = "https://crce-students.contineo.in/parentsodd/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
+
+# Default (kept for backward compatibility)
+LOGIN_URL = LOGIN_URL_EVEN
 FORM_ACTION_URL = LOGIN_URL
+
+
+def get_login_url(semester_type="even"):
+    """Returns the appropriate login URL based on semester type ('odd' or 'even')."""
+    if semester_type == "odd":
+        return LOGIN_URL_ODD
+    return LOGIN_URL_EVEN
 
 # --- Form Field Names ---
 PRN_FIELD_NAME = "username"
@@ -67,17 +77,7 @@ MAX_MARKS_CONFIG = {
     # "CSL701": {         # Example: Machine Learning Lab
     #     "PR-ISE1": 10,  # <--- HERE: You specify this is out of 10
     #     "PR-ISE2": 10   # <--- HERE: You specify this is out of 10
-    # },
-    
-    "CSDL7013": {       # Example: NLP Lab
-        "PR-ISE1": 10,
-        "PR-ISE2": 15
-    },
-
-    "CSDL7023": {       # Example: IR Lab
-        "PR-ISE1": 10,
-        "PR-ISE2": 15
-    }
+    # }
 }
 
 def get_max_marks(subject_code, exam_type):

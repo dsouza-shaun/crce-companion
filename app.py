@@ -36,14 +36,14 @@ import resend
 
 def send_email_notification(user, user_email, message, rating):
     api_key = os.getenv("RESEND_API_KEY")
-    receiver_email = os.getenv("EMAIL_RECEIVER")  # Your personal email
+    receiver_email = os.getenv("EMAIL_RECEIVER")
 
     if not api_key:
         return
 
     resend.api_key = api_key
 
-    # If user didn't provide email, reply-to defaults to your own email (so you don't lose the thread)
+    # If user didn't provide email, reply-to defaults to my own email (so i don't lose the thread)
     reply_to_address = user_email if user_email else receiver_email
 
     html_content = f"""
@@ -77,32 +77,18 @@ def identify_semester(subject_code):
     return int(match.group()) if match else 0
 
 
-def scrape_fresh_data(user_details):
+def scrape_fresh_data(user_details, semester_types=None):
     """
     Scrapes data and organizes it.
+    - semester_types: list of "even" and/or "odd" — determines which portal(s) to scrape.
     - Default: Uses the Semester found on the Welcome Page (e.g., 7).
     - Exception: Moves 'CSC8...', 'CSDC8...', 'CSDL8...' subjects to Semester 8.
     """
+    if semester_types is None:
+        semester_types = ["even"]
 
-    # 1. Login and get the Dashboard HTML
-    session, html = web_scraper.login_and_get_welcome_page(
-        user_details["prn"], user_details["dob_day"],
-        user_details["dob_month"], user_details["dob_year"],
-        user_details["full_name"]
-    )
-    if not html: return None
-
-    # 2. Extract the Default Semester from the Dashboard
-    dashboard_sem = web_scraper.extract_student_semester(html)
-    if not dashboard_sem:
-        dashboard_sem = 0
-
-        # 3. Scrape Raw Data
-    raw_marks = web_scraper.extract_cie_marks(session, html)
-    raw_att = web_scraper.extract_detailed_attendance_info(session, html)
-
-    # 4. Organize Data (Hybrid Logic)
-    organized_data = {}
+    all_organized_data = {}
+    last_scraped_at = None
 
     def get_sem_for_subject(sub_code, default_sem):
         """Checks if subject is explicitly Sem 8, otherwise returns default."""
@@ -115,29 +101,55 @@ def scrape_fresh_data(user_details):
         # Otherwise, stick to what the dashboard says (e.g., Sem 7)
         return default_sem
 
-    # --- Process Marks ---
-    for sub, exams in raw_marks.items():
-        sem = get_sem_for_subject(sub, dashboard_sem)
+    for sem_type in semester_types:
+        login_url = config.get_login_url(sem_type)
+        portal_label = "Odd" if sem_type == "odd" else "Even"
 
-        if sem == 0: continue  # Skip if invalid
+        # 1. Login and get the Dashboard HTML
+        session, html = web_scraper.login_and_get_welcome_page(
+            user_details["prn"], user_details["dob_day"],
+            user_details["dob_month"], user_details["dob_year"],
+            user_details["full_name"],
+            login_url=login_url
+        )
+        if not html:
+            print(f"Login failed for {portal_label} semester portal.")
+            continue
 
-        if sem not in organized_data:
-            organized_data[sem] = {'cie': {}, 'att': {}}
-        organized_data[sem]['cie'][sub] = exams
+        # 2. Extract the Default Semester from the Dashboard
+        dashboard_sem = web_scraper.extract_student_semester(html)
+        if not dashboard_sem:
+            dashboard_sem = 0
 
-    # --- Process Attendance ---
-    for sub, details in raw_att.items():
-        sem = get_sem_for_subject(sub, dashboard_sem)
+        # 3. Scrape Raw Data
+        raw_marks = web_scraper.extract_cie_marks(session, html, base_url=login_url)
+        raw_att = web_scraper.extract_detailed_attendance_info(session, html, base_url=login_url)
 
-        if sem == 0: continue
+        # 4. Organize Data (Hybrid Logic) — merge into all_organized_data
+        for sub, exams in raw_marks.items():
+            sem = get_sem_for_subject(sub, dashboard_sem)
+            if sem == 0:
+                continue
+            if sem not in all_organized_data:
+                all_organized_data[sem] = {'cie': {}, 'att': {}}
+            all_organized_data[sem]['cie'][sub] = exams
 
-        if sem not in organized_data:
-            organized_data[sem] = {'cie': {}, 'att': {}}
-        organized_data[sem]['att'][sub] = details
+        for sub, details in raw_att.items():
+            sem = get_sem_for_subject(sub, dashboard_sem)
+            if sem == 0:
+                continue
+            if sem not in all_organized_data:
+                all_organized_data[sem] = {'cie': {}, 'att': {}}
+            all_organized_data[sem]['att'][sub] = details
+
+        last_scraped_at = datetime.now(pytz.utc)
+
+    if not all_organized_data:
+        return None
 
     return {
-        "semesters_data": organized_data,
-        "scraped_at": datetime.now(pytz.utc)
+        "semesters_data": all_organized_data,
+        "scraped_at": last_scraped_at
     }
 
 
@@ -158,10 +170,10 @@ if 'db_initialized' not in st.session_state:
     db_utils.create_feedback_table_pg()
     st.session_state.db_initialized = True
 
-st.set_page_config(page_title="Student Portal Viewer", page_icon="static/contineo.png", layout="wide")
-st.header("🎓 Student Portal Data Viewer")
+st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
+st.header("🎓 CRCE Companion")
 
-# Injecting the PWA links pointing to your local static folder
+# Injecting the PWA links pointing to local static folder
 st.markdown(
     """
     <link rel="manifest" href="/app/static/manifest.json">
@@ -191,6 +203,18 @@ first_name_input = st.session_state.first_name.strip()
 if first_name_input:
     st.sidebar.write(f"Welcome back, **{first_name_input}**!")
 
+# --- Semester Portal Selector (commented out: always fetches Both) ---
+# SEM_TYPE_OPTIONS = {"Even Semester": "even", "Odd Semester": "odd", "Both Semesters": "both"}
+# selected_sem_type_label = st.sidebar.selectbox(
+#     "Semester Portal",
+#     list(SEM_TYPE_OPTIONS.keys()),
+#     index=2,  # Default: Both Semesters
+#     help="Select which semester portal to scrape from. Use 'Both' to fetch from odd and even portals together."
+# )
+# selected_sem_type = SEM_TYPE_OPTIONS[selected_sem_type_label]
+selected_sem_type = "both"
+selected_sem_type_label = "Both Semesters"
+
 col1, col2 = st.sidebar.columns(2)
 with col1:
     fetch_button = st.button("Fetch Data", type="primary", width='stretch')
@@ -200,8 +224,8 @@ with col2:
     st.caption("**From Portal**\n(Current Data)")
 st.sidebar.markdown("---")
 
-# --- Add User Form (WITH VALIDATION) ---
-if st.sidebar.button("➕ Register New Student", width='stretch'):
+# Add User Form
+if st.sidebar.button("➕ Register New Student", type="primary", width='stretch'):
     st.session_state.show_add_user_form = not st.session_state.show_add_user_form
 
 if st.session_state.show_add_user_form:
@@ -211,7 +235,7 @@ if st.session_state.show_add_user_form:
             st.info("⚠️ Details must match the University Portal exactly.")
 
             new_first_name = st.text_input("App Username (e.g. 'gamer709'):").strip()
-            new_full_name = st.text_input("Full Name (as on Portal):").strip()
+            new_full_name = st.text_input("Full Name (as on Portal):").strip().upper()
             new_prn = st.text_input("PRN(Or Roll no if you use that):").strip()
 
             new_dob_day = st.text_input("Date (DD)", max_chars=2).strip()
@@ -228,13 +252,15 @@ if st.session_state.show_add_user_form:
                     # 2. Remote Validation: Attempt to Log in to the Portal
                     with st.spinner("Attempting login to Contineo Portal..."):
                         try:
-                            # Attempt login using the web_scraper module
+                            # Use the currently selected semester portal for validation
+                            validation_login_url = config.get_login_url(selected_sem_type if selected_sem_type != "both" else "even")
                             session, validation_html = web_scraper.login_and_get_welcome_page(
                                 new_prn,
                                 new_dob_day,
                                 new_dob_month,
                                 new_dob_year,
-                                new_full_name
+                                new_full_name,
+                                login_url=validation_login_url
                             )
                         except Exception as e:
                             session, validation_html = None, None
@@ -269,6 +295,7 @@ if st.session_state.show_add_user_form:
                         1. Incorrect PRN or Date of Birth.
                         2. **Full Name** does not match the portal exactly (check spelling/spacing).
                         3. Portal is currently down.
+                        4. Wrong semester portal selected — try switching between **Odd/Even Semester** above.
                         """)
 # --- Fetch Logic ---
 should_fetch = (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
@@ -289,8 +316,14 @@ if should_fetch and first_name_input:
         # 2. Scrape if needed
         if not result or force_refresh_button:
             source = "Live Portal"
-            with st.spinner("Fetching from portal..."):
-                scrape_res = scrape_fresh_data(user_details)
+            # Determine which portal(s) to scrape based on sidebar selection
+            if selected_sem_type == "both":
+                sem_types_to_scrape = ["even", "odd"]
+            else:
+                sem_types_to_scrape = [selected_sem_type]
+            spinner_msg = f"Fetching from {selected_sem_type_label.lower()} portal..."
+            with st.spinner(spinner_msg):
+                scrape_res = scrape_fresh_data(user_details, semester_types=sem_types_to_scrape)
                 if scrape_res:
                     result = scrape_res
                     # Save to DB (Marks & Attendance linked to Current Semester)
@@ -500,6 +533,11 @@ if st.session_state.student_data_result:
 
 elif (fetch_button or force_refresh_button) and not first_name_input:
     st.sidebar.warning("Please enter a username to fetch data.")
+
+# --- Sidebar Footer ---
+st.sidebar.markdown("---")
+st.sidebar.caption("Created by **Shaun Dsouza**")
+st.sidebar.caption("Based on [Mark Lopes' Contineo](https://github.com/MarkLopes11/Contineo) version")
 
 # --- Append this to the very end of app.py ---
 st.divider()

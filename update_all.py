@@ -42,7 +42,7 @@ def calculate_grade_point(percentage):
 
 def run_update():
     print("="*60)
-    print("🚀 Starting BATCH UPDATE: Hybrid Sem 7/8 Logic")
+    print("🚀 Starting BATCH UPDATE: Both Odd & Even Semesters")
     print("="*60)
 
     all_users = db_utils.get_all_users_from_db_pg()
@@ -66,36 +66,45 @@ def run_update():
         print(f"[{i+1}/{total_users}] Processing: {full_name} (PRN: {prn})")
 
         try:
-            # 1. Login
-            session, html = web_scraper.login_and_get_welcome_page(
-                prn, user['dob_day'], user['dob_month'], user['dob_year'], full_name
-            )
-
-            if not html:
-                print(f"   ❌ Login FAILED. Skipping.")
-                fail_count += 1
-                continue
-
-            # 2. Scrape Mixed Raw Data
-            raw_marks = web_scraper.extract_cie_marks(session, html)
-            raw_att = web_scraper.extract_detailed_attendance_info(session, html)
-            dashboard_sem = web_scraper.extract_student_semester(html) or 0
-            
-            # 3. Organize into Buckets (Hybrid Logic)
-            # Structure: { 7: {'cie': {}, 'att': {}}, 8: {...} }
+            # Try both Even and Odd semester portals
             organized_data = {}
 
-            # Sort Marks
-            for sub, exams in raw_marks.items():
-                sem = identify_target_semester(sub, dashboard_sem)
-                if sem not in organized_data: organized_data[sem] = {'cie': {}, 'att': {}}
-                organized_data[sem]['cie'][sub] = exams
+            for sem_type in ["even", "odd"]:
+                login_url = config.get_login_url(sem_type)
+                portal_label = "Odd" if sem_type == "odd" else "Even"
+                print(f"   🔄 Trying {portal_label} semester portal...")
 
-            # Sort Attendance
-            for sub, details in raw_att.items():
-                sem = identify_target_semester(sub, dashboard_sem)
-                if sem not in organized_data: organized_data[sem] = {'cie': {}, 'att': {}}
-                organized_data[sem]['att'][sub] = details
+                session, html = web_scraper.login_and_get_welcome_page(
+                    prn, user['dob_day'], user['dob_month'], user['dob_year'], full_name,
+                    login_url=login_url
+                )
+
+                if not html:
+                    print(f"   ⚠️ {portal_label} portal login failed. Skipping.")
+                    continue
+
+                raw_marks = web_scraper.extract_cie_marks(session, html, base_url=login_url)
+                raw_att = web_scraper.extract_detailed_attendance_info(session, html, base_url=login_url)
+                dashboard_sem = web_scraper.extract_student_semester(html) or 0
+
+                # Sort Marks
+                for sub, exams in raw_marks.items():
+                    sem = identify_target_semester(sub, dashboard_sem)
+                    if sem not in organized_data: organized_data[sem] = {'cie': {}, 'att': {}}
+                    organized_data[sem]['cie'][sub] = exams
+
+                # Sort Attendance
+                for sub, details in raw_att.items():
+                    sem = identify_target_semester(sub, dashboard_sem)
+                    if sem not in organized_data: organized_data[sem] = {'cie': {}, 'att': {}}
+                    organized_data[sem]['att'][sub] = details
+
+                print(f"   ✅ {portal_label} portal scraped successfully.")
+
+            if not organized_data:
+                print(f"   ❌ No data from either portal. Skipping.")
+                fail_count += 1
+                continue
 
             timestamp = datetime.now(pytz.utc)
 

@@ -6,7 +6,6 @@ import json
 
 DB_NAME_FOR_MESSAGES = "PostgreSQL (Neon.tech)"
 
-
 def get_db_connection():
     try:
         conn = psycopg2.connect(config.NEON_CONNECTION_STRING)
@@ -15,7 +14,6 @@ def get_db_connection():
         print(f"DB Connection Error: {e}")
         return None
 
-
 def create_db_and_table_pg():
     conn = get_db_connection()
     if not conn: return
@@ -23,131 +21,58 @@ def create_db_and_table_pg():
     try:
         # 1. Users Table
         cursor.execute('''
-                       CREATE TABLE IF NOT EXISTS users
-                       (
-                           id
-                           SERIAL
-                           PRIMARY
-                           KEY,
-                           first_name
-                           TEXT
-                           NOT
-                           NULL
-                           UNIQUE,
-                           full_name
-                           TEXT
-                           NOT
-                           NULL,
-                           prn
-                           TEXT
-                           NOT
-                           NULL
-                           UNIQUE,
-                           dob_day
-                           TEXT
-                           NOT
-                           NULL,
-                           dob_month
-                           TEXT
-                           NOT
-                           NULL,
-                           dob_year
-                           TEXT
-                           NOT
-                           NULL
-                       )
-                       ''')
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                first_name TEXT NOT NULL UNIQUE,
+                full_name TEXT NOT NULL,
+                prn TEXT NOT NULL UNIQUE,
+                dob_day TEXT NOT NULL,
+                dob_month TEXT NOT NULL,
+                dob_year TEXT NOT NULL
+            )
+        ''')
 
-        # 2. CIE Marks Table (Added SEMESTER)
+        # 2. CIE Marks Table
         cursor.execute('''
-                       CREATE TABLE IF NOT EXISTS cie_marks
-                       (
-                           id
-                           SERIAL
-                           PRIMARY
-                           KEY,
-                           user_id
-                           INTEGER
-                           NOT
-                           NULL
-                           REFERENCES
-                           users
-                       (
-                           id
-                       ) ON DELETE CASCADE,
-                           semester INTEGER NOT NULL, -- NEW
-                           subject_code TEXT NOT NULL,
-                           exam_type TEXT NOT NULL,
-                           marks NUMERIC
-                       (
-                           5,
-                           2
-                       ),
-                           max_marks NUMERIC
-                       (
-                           5,
-                           2
-                       ),
-                           scraped_at TIMESTAMP
-                         WITH TIME ZONE NOT NULL,
-                             UNIQUE (user_id, subject_code, exam_type)
-                           )
-                       ''')
+            CREATE TABLE IF NOT EXISTS cie_marks (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                semester INTEGER NOT NULL, -- NEW
+                subject_code TEXT NOT NULL,
+                exam_type TEXT NOT NULL,
+                marks NUMERIC(5, 2),
+                max_marks NUMERIC(5, 2),
+                scraped_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                UNIQUE (user_id, subject_code, exam_type) 
+            )
+        ''')
 
-        # 3. Attendance Table (New Dedicated Table)
+        # 3. Attendance Table
         cursor.execute('''
-                       CREATE TABLE IF NOT EXISTS attendance_records
-                       (
-                           id
-                           SERIAL
-                           PRIMARY
-                           KEY,
-                           user_id
-                           INTEGER
-                           NOT
-                           NULL
-                           REFERENCES
-                           users
-                       (
-                           id
-                       ) ON DELETE CASCADE,
-                           semester INTEGER NOT NULL,
-                           subject_code TEXT NOT NULL,
-                           attended INTEGER,
-                           conducted INTEGER,
-                           percentage NUMERIC
-                       (
-                           5,
-                           2
-                       ),
-                           updated_at TIMESTAMP
-                         WITH TIME ZONE NOT NULL,
-                             UNIQUE (user_id, semester, subject_code)
-                           )
-                       ''')
+            CREATE TABLE IF NOT EXISTS attendance_records (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                semester INTEGER NOT NULL,
+                subject_code TEXT NOT NULL,
+                attended INTEGER,
+                conducted INTEGER,
+                percentage NUMERIC(5, 2),
+                updated_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                UNIQUE (user_id, semester, subject_code)
+            )
+        ''')
 
         # 4. Student Performance (SGPI)
         cursor.execute("""
-                       CREATE TABLE IF NOT EXISTS student_performance
-                       (
-                           user_id
-                           INTEGER
-                           REFERENCES
-                           users
-                       (
-                           id
-                       ) ON DELETE CASCADE,
-                           semester INTEGER NOT NULL,
-                           sgpi FLOAT,
-                           grade_details JSONB,
-                           updated_at TIMESTAMPTZ,
-                           PRIMARY KEY
-                       (
-                           user_id,
-                           semester
-                       )
-                           );
-                       """)
+            CREATE TABLE IF NOT EXISTS student_performance (
+                user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                semester INTEGER NOT NULL,
+                sgpi FLOAT,
+                grade_details JSONB,
+                updated_at TIMESTAMPTZ,
+                PRIMARY KEY (user_id, semester)
+            );
+        """)
         conn.commit()
         print("Tables checked/created successfully.")
     except psycopg2.Error as e:
@@ -156,16 +81,15 @@ def create_db_and_table_pg():
         cursor.close()
         conn.close()
 
-
 def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year):
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
     try:
         cursor.execute('''
-                       INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year)
-                       VALUES (%s, %s, %s, %s, %s, %s)
-                       ''', (first_name.lower().strip(), full_name.strip(), prn.strip(), dob_day, dob_month, dob_year))
+            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year))
         conn.commit()
         return True
     except psycopg2.IntegrityError:
@@ -175,17 +99,15 @@ def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year):
         cursor.close()
         conn.close()
 
-
 def get_user_from_db_pg(first_name_query):
     conn = get_db_connection()
     if not conn: return None
     cursor = conn.cursor()
     try:
         cursor.execute('''
-                       SELECT id, full_name, prn, dob_day, dob_month, dob_year
-                       FROM users
-                       WHERE first_name = %s
-                       ''', (first_name_query.lower().strip(),))
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year
+            FROM users WHERE first_name = %s
+        ''', (first_name_query.lower().strip(),))
         row = cursor.fetchone()
         if row:
             return {
@@ -204,10 +126,10 @@ def get_all_users_from_db_pg():
     cursor = conn.cursor()
     try:
         cursor.execute('''
-                       SELECT id, full_name, prn, dob_day, dob_month, dob_year
-                       FROM users
-                       ORDER BY id
-                       ''')
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year
+            FROM users
+            ORDER BY id
+        ''')
         rows = cursor.fetchall()
         users = []
         for row in rows:
@@ -247,16 +169,15 @@ def update_student_marks_in_db_pg(user_id, semester, cie_marks_data, scraped_tim
 
         if records:
             cursor.executemany("""
-                               INSERT INTO cie_marks (user_id, semester, subject_code, exam_type, marks, max_marks,
-                                                      scraped_at)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (user_id, subject_code, exam_type) 
-                DO
-                               UPDATE SET
-                                   marks = EXCLUDED.marks,
-                                   max_marks = EXCLUDED.max_marks,
-                                   scraped_at = EXCLUDED.scraped_at,
-                                   semester = EXCLUDED.semester;
-                               """, records)
+                INSERT INTO cie_marks (user_id, semester, subject_code, exam_type, marks, max_marks, scraped_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, subject_code, exam_type) 
+                DO UPDATE SET 
+                    marks = EXCLUDED.marks, 
+                    max_marks = EXCLUDED.max_marks, 
+                    scraped_at = EXCLUDED.scraped_at, 
+                    semester = EXCLUDED.semester;
+            """, records)
 
         conn.commit()
         return True
@@ -268,7 +189,7 @@ def update_student_marks_in_db_pg(user_id, semester, cie_marks_data, scraped_tim
             if conn and not conn.closed:
                 conn.rollback()
         except:
-            pass  # Connection already dead, cannot rollback
+            pass # Connection already dead, cannot rollback
         return False
 
     finally:
@@ -280,7 +201,6 @@ def update_student_marks_in_db_pg(user_id, semester, cie_marks_data, scraped_tim
                 conn.close()
         except:
             pass
-
 
 def update_attendance_in_db_pg(user_id, semester, attendance_data):
     """Saves Attendance to the DB linked to a Semester."""
@@ -299,12 +219,11 @@ def update_attendance_in_db_pg(user_id, semester, attendance_data):
 
         if records:
             cursor.executemany("""
-                               INSERT INTO attendance_records (user_id, semester, subject_code, attended, conducted,
-                                                               percentage, updated_at)
-                               VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (user_id, semester, subject_code)
-                DO
-                               UPDATE SET attended = EXCLUDED.attended, conducted = EXCLUDED.conducted, percentage = EXCLUDED.percentage, updated_at = NOW();
-                               """, records)
+                INSERT INTO attendance_records (user_id, semester, subject_code, attended, conducted, percentage, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, semester, subject_code)
+                DO UPDATE SET attended = EXCLUDED.attended, conducted = EXCLUDED.conducted, percentage = EXCLUDED.percentage, updated_at = NOW();
+            """, records)
         conn.commit()
         return True
     except Exception as e:
@@ -315,7 +234,6 @@ def update_attendance_in_db_pg(user_id, semester, attendance_data):
         cursor.close()
         conn.close()
 
-
 def save_student_sgpi_pg(user_id, semester, sgpi, grade_details):
     """Saves SGPI."""
     conn = get_db_connection()
@@ -324,14 +242,14 @@ def save_student_sgpi_pg(user_id, semester, sgpi, grade_details):
     try:
         json_grades = json.dumps(grade_details)
         cursor.execute("""
-                       INSERT INTO student_performance (user_id, semester, sgpi, grade_details, updated_at)
-                       VALUES (%s, %s, %s, %s, NOW()) ON CONFLICT (user_id, semester) 
-            DO
-                       UPDATE SET
-                           sgpi = EXCLUDED.sgpi,
-                           grade_details = EXCLUDED.grade_details,
-                           updated_at = NOW();
-                       """, (user_id, semester, sgpi, json_grades))
+            INSERT INTO student_performance (user_id, semester, sgpi, grade_details, updated_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (user_id, semester) 
+            DO UPDATE SET 
+                sgpi = EXCLUDED.sgpi,
+                grade_details = EXCLUDED.grade_details,
+                updated_at = NOW();
+        """, (user_id, semester, sgpi, json_grades))
         conn.commit()
         return True
     except Exception as e:
@@ -340,7 +258,6 @@ def save_student_sgpi_pg(user_id, semester, sgpi, grade_details):
     finally:
         cursor.close()
         conn.close()
-
 
 def get_student_data_from_db(user_id):
     """
@@ -351,20 +268,18 @@ def get_student_data_from_db(user_id):
     if not conn: return None
     cursor = conn.cursor()
 
-    full_data = {}  # Key = Semester
+    full_data = {} # Key = Semester
 
     try:
         # 1. Fetch Marks
-        cursor.execute(
-            "SELECT semester, subject_code, exam_type, marks, max_marks, scraped_at FROM cie_marks WHERE user_id = %s",
-            (user_id,))
+        cursor.execute("SELECT semester, subject_code, exam_type, marks, max_marks, scraped_at FROM cie_marks WHERE user_id = %s", (user_id,))
         mark_rows = cursor.fetchall()
 
         last_scraped = None
 
         for r in mark_rows:
             sem, sub, exam, obt, mx, ts = r
-            last_scraped = ts  # Just take the last one
+            last_scraped = ts # Just take the last one
 
             if sem not in full_data: full_data[sem] = {'cie': {}, 'att': {}, 'sgpi': None}
             if sub not in full_data[sem]['cie']: full_data[sem]['cie'][sub] = {}
@@ -372,8 +287,7 @@ def get_student_data_from_db(user_id):
             full_data[sem]['cie'][sub][exam] = {'obtained': float(obt), 'max': float(mx)}
 
         # 2. Fetch Attendance
-        cursor.execute("SELECT semester, subject_code, attended, conducted FROM attendance_records WHERE user_id = %s",
-                       (user_id,))
+        cursor.execute("SELECT semester, subject_code, attended, conducted FROM attendance_records WHERE user_id = %s", (user_id,))
         att_rows = cursor.fetchall()
         for r in att_rows:
             sem, sub, att, cond = r
@@ -406,7 +320,6 @@ def get_student_data_from_db(user_id):
         cursor.close()
         conn.close()
 
-
 def get_semester_leaderboard_pg(semester, limit=5):
     """Gets top students for a specific semester."""
     conn = get_db_connection()
@@ -414,13 +327,13 @@ def get_semester_leaderboard_pg(semester, limit=5):
     cursor = conn.cursor()
     try:
         cursor.execute("""
-                       SELECT u.full_name, sp.sgpi
-                       FROM student_performance sp
-                                JOIN users u ON sp.user_id = u.id
-                       WHERE sp.semester = %s
-                       ORDER BY sp.sgpi DESC
-                           LIMIT %s
-                       """, (semester, limit))
+            SELECT u.full_name, sp.sgpi
+            FROM student_performance sp
+            JOIN users u ON sp.user_id = u.id
+            WHERE sp.semester = %s
+            ORDER BY sp.sgpi DESC
+            LIMIT %s
+        """, (semester, limit))
         return cursor.fetchall()
     except Exception as e:
         print(f"Error fetching leaderboard: {e}")
@@ -429,45 +342,36 @@ def get_semester_leaderboard_pg(semester, limit=5):
         cursor.close()
         conn.close()
 
+
+# db_utils.py
+
 def create_feedback_table_pg():
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
         # Create table if not exists
         cur.execute("""
-                    CREATE TABLE IF NOT EXISTS feedback
-                    (
-                        id
-                        SERIAL
-                        PRIMARY
-                        KEY,
-                        username
-                        TEXT,
-                        email
-                        TEXT, -- <--- NEW COLUMN
-                        message
-                        TEXT,
-                        rating
-                        INTEGER,
-                        submitted_at
-                        TIMESTAMP
-                        DEFAULT
-                        CURRENT_TIMESTAMP
-                    );
-                    """)
+            CREATE TABLE IF NOT EXISTS feedback (
+                id SERIAL PRIMARY KEY,
+                username TEXT,
+                email TEXT,  -- <--- NEW COLUMN
+                message TEXT,
+                rating INTEGER,
+                submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
         conn.commit()
         conn.close()
 
-
-def save_feedback_pg(username, email, message, rating):
+def save_feedback_pg(username, email, message, rating): # <--- Added email param
     conn = get_db_connection()
     if conn:
         try:
             cur = conn.cursor()
             cur.execute("""
-                        INSERT INTO feedback (username, email, message, rating)
-                        VALUES (%s, %s, %s, %s)
-                        """, (username, email, message, rating))
+                INSERT INTO feedback (username, email, message, rating) 
+                VALUES (%s, %s, %s, %s)
+            """, (username, email, message, rating))
             conn.commit()
             conn.close()
             return True
