@@ -34,12 +34,11 @@ The official Contineo student portal is tedious to use every day:
   - Calculates exactly how many lectures you can **miss** while staying above 75%.
   - Tells you how many lectures you must **attend** to get back to 75% if you're below.
 - **Detailed CIE Marks** — Clean breakdown of marks for MSE, ISE, ESE, and lab exams with per-subject totals.
-- **SGPI Calculation** — Automatically computes your Semester Grade Point Index with a subject-wise grade breakdown.
+- **SGPA Calculation** — Automatically computes your Semester Grade Point Average with a subject-wise grade breakdown.
 - **Semester Leaderboards** — See how you rank against your classmates for any semester.
 - **Live Data & Caching**
   - **Fetch Data** — Retrieves cached data from the database (instant).
   - **Get Live Data** — Scrapes the portal for the most up-to-the-minute information.
-- **Feedback System** — Built-in feedback form with email notifications via Resend.
 
 
 ## Tech Stack
@@ -119,6 +118,6 @@ A detailed breakdown of the repository is available in:
 
 <div align="center">
 
-Based on [Mark Lopes' Contineo](https://github.com/MarkLopes11/Contineo) version
+Inspired by [Mark Lopes' Contineo](https://github.com/MarkLopes11/Contineo) version
 
 </div>

@@ -661,7 +661,7 @@ st.sidebar.markdown(
             </a>
         </p>
         <p style="font-size: 0.85rem; color: gray; line-height: 1.2;">
-            Based on 
+            Inspired by 
             <a href="https://github.com/MarkLopes11/Contineo" target="_blank" style="color: #4F8BF9;">
                 Mark Lopes' Contineo
             </a> version
