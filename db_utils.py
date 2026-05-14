@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 
+import bcrypt
 import psycopg2
 
 import config
@@ -29,8 +30,14 @@ def create_db_and_table_pg():
                 prn TEXT NOT NULL UNIQUE,
                 dob_day TEXT NOT NULL,
                 dob_month TEXT NOT NULL,
-                dob_year TEXT NOT NULL
+                dob_year TEXT NOT NULL,
+                password_hash TEXT
             )
+        ''')
+
+        # Migrate existing deployments that pre-date the password_hash column
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT
         ''')
 
         # 2. CIE Marks Table
@@ -63,7 +70,7 @@ def create_db_and_table_pg():
             )
         ''')
 
-        # 4. Student Performance (SGPI)
+        # 4. Student Performance (SGPA)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS student_performance (
                 user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
@@ -82,18 +89,93 @@ def create_db_and_table_pg():
         cursor.close()
         conn.close()
 
-def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year):
+def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, password=None):
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
     try:
+        password_hash = None
+        if password:
+            password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
         cursor.execute('''
-            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year))
+            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year, password_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year, password_hash))
         conn.commit()
         return True
     except psycopg2.IntegrityError:
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def verify_user_password(first_name, password):
+    """
+    Returns True if the given password matches the stored hash for first_name.
+    Also returns True for legacy accounts with no password set (so existing users
+    aren't locked out). Use user_has_password() to detect those accounts.
+    """
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT password_hash FROM users WHERE first_name = %s",
+            (first_name.lower().strip(),)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False
+        stored_hash = row[0]
+        # Legacy account — no password set yet, allow access
+        if stored_hash is None:
+            return True
+        return bcrypt.checkpw(password.encode("utf-8"), stored_hash.encode("utf-8"))
+    except Exception as e:
+        print(f"Password verify error: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def user_has_password(first_name):
+    """Returns True if the user has a password set, False for legacy accounts."""
+    conn = get_db_connection()
+    if not conn: return True
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT password_hash FROM users WHERE first_name = %s",
+            (first_name.lower().strip(),)
+        )
+        row = cursor.fetchone()
+        if not row:
+            return True
+        return row[0] is not None
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_user_password(first_name, new_password):
+    """Sets or updates a user's password. Used for legacy account migration."""
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        cursor.execute(
+            "UPDATE users SET password_hash = %s WHERE first_name = %s",
+            (password_hash, first_name.lower().strip())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Set password error: {e}")
         conn.rollback()
         return False
     finally:

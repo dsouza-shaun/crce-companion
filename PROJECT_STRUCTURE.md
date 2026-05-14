@@ -17,6 +17,5 @@
     ├── README.md
     ├── update_all.py           # Batch update script for all users
     ├── uv.lock                 # Locked dependency versions
-    ├── web_scraper.py          # Portal scraping & login logic
-    └── ws.py
+    └── web_scraper.py          # Portal scraping & login logic
 ```

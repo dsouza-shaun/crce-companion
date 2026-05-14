@@ -3,6 +3,7 @@ name = "crce-companion"
 version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
+    "bcrypt>=5.0.0",
     "beautifulsoup4>=4.14.3",
     "psycopg2-binary>=2.9.12",
     "python-dotenv>=1.2.2",

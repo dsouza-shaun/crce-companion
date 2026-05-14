@@ -58,7 +58,7 @@ def send_email_notification(user, user_email, message, rating):
         resend.Emails.send({
             "from": "Student App <onboarding@resend.dev>",
             "to": receiver_email,
-            "reply_to": reply_to_address,  # <--- THIS IS THE MAGIC LINE
+            "reply_to": reply_to_address,
             "subject": f"New Feedback from {user} ({rating} Stars)",
             "html": html_content
         })
@@ -192,20 +192,61 @@ if 'show_add_user_form' not in st.session_state:
     st.session_state.show_add_user_form = False
 if 'student_data_result' not in st.session_state:
     st.session_state.student_data_result = None
+if 'authenticated_user' not in st.session_state:
+    st.session_state.authenticated_user = None  # username string when logged in
+if 'show_toast' not in st.session_state:
+    st.session_state.show_toast = None
 
 
 def on_user_change():
+    # When username changes, clear auth and data
+    st.session_state.authenticated_user = None
     st.session_state.student_data_result = None
 
 
 st.sidebar.header("Student Lookup")
-st.sidebar.text_input("Enter your username:", key="first_name", on_change=on_user_change)
+st.sidebar.text_input("Username:", key="first_name", on_change=on_user_change)
 first_name_input = st.session_state.first_name.strip()
 
-if first_name_input:
-    st.sidebar.write(f"Welcome back, **{first_name_input}**!")
+# Password input + login button (shown when username is typed and not yet authenticated)
+sidebar_password = ""
+login_clicked = False
+if first_name_input and st.session_state.authenticated_user != first_name_input:
+    sidebar_password = st.sidebar.text_input(
+        "Password:", type="password", key="sidebar_password_input"
+    )
+    login_clicked = st.sidebar.button("Login", type="primary", width="stretch")
 
-# --- Semester Portal Selector (commented out: always fetches Both) ---
+# Handle Login button click
+if login_clicked and first_name_input:
+    lookup = db_utils.get_user_from_db_pg(first_name_input)
+    if not lookup:
+        st.sidebar.error("Username not found.")
+    else:
+        pw_ok = db_utils.verify_user_password(first_name_input, sidebar_password)
+        if pw_ok:
+            st.session_state.authenticated_user = first_name_input
+            st.session_state.student_data_result = None
+            if not db_utils.user_has_password(first_name_input):
+                # Warning remains with emoji as requested
+                st.session_state.show_toast = ("warning", "⚠️ Account has no password set. Please re-register.")
+            else:
+                # Success message is now plain text
+                st.session_state.show_toast = ("success", f"Logged in as {first_name_input}!")
+            st.rerun()
+        else:
+            st.sidebar.error("Incorrect password.")
+
+is_authenticated = (st.session_state.authenticated_user == first_name_input) if first_name_input else False
+
+# Show login/logout toast
+if st.session_state.get("show_toast"):
+    st.toast(st.session_state.show_toast[1])
+    st.session_state.show_toast = None
+
+# i have commented the below functionality
+# because it was redundant but i have kept it for backward comaptibility
+# --- Semester Portal Selector ---
 # SEM_TYPE_OPTIONS = {"Even Semester": "even", "Odd Semester": "odd", "Both Semesters": "both"}
 # selected_sem_type_label = st.sidebar.selectbox(
 #     "Semester Portal",
@@ -217,14 +258,25 @@ if first_name_input:
 selected_sem_type = "both"
 selected_sem_type_label = "Both Semesters"
 
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    fetch_button = st.button("Fetch Data", type="primary", width='stretch')
-    st.caption("**From DB**\n(Cached Data)")
-with col2:
-    force_refresh_button = st.button("Get Live Data", width='stretch')
-    st.caption("**From Portal**\n(Current Data)")
-st.sidebar.markdown("---")
+# Fetch buttons and logout — only shown when authenticated
+fetch_button = False
+force_refresh_button = False
+if is_authenticated:
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        fetch_button = st.button("Fetch Data", type="primary", width='stretch')
+        st.caption("**From DB**\n(Cached Data)")
+    with col2:
+        force_refresh_button = st.button("Get Live Data", width='stretch')
+        st.caption("**From Portal**\n(Current Data)")
+    st.sidebar.markdown("---")
+    if st.sidebar.button("Logout", width="stretch"):
+        st.session_state.authenticated_user = None
+        st.session_state.student_data_result = None
+        st.session_state.show_toast = ("success", f"Logged out.")
+        st.rerun()
+else:
+    st.sidebar.markdown("---")
 
 # Add User Form
 if st.sidebar.button("➕ Register New Student", type="primary", width='stretch'):
@@ -238,9 +290,18 @@ if st.session_state.show_add_user_form:
 
             new_first_name = st.text_input(
                 "App Username (e.g. 'gamer709'):",
-                help="Choose a strong unique username and do not share it with anyone. "
+                help="Choose a strong unique username. "
                      "This username will be used to log in to CRCE Companion."
             ).strip()
+            new_password = st.text_input(
+                "Password:",
+                type="password",
+                help="Choose a strong password and do not share it with anyone. You will need this to log in."
+            )
+            new_password_confirm = st.text_input(
+                "Confirm Password:",
+                type="password"
+            )
             new_full_name = st.text_input("Full Name (as on Portal):").strip().upper()
             new_prn = st.text_input("Roll no. (Or PRN if you use that):").strip()
 
@@ -271,8 +332,12 @@ if st.session_state.show_add_user_form:
 
             if submitted_add_user:
                 # 1. Local Validation: Check for empty fields
-                if not all([new_first_name, new_full_name, new_prn, new_dob_day, new_dob_month, new_dob_year]):
+                if not all([new_first_name, new_password, new_password_confirm, new_full_name, new_prn, new_dob_day, new_dob_month, new_dob_year]):
                     st.error("❌ All fields are required.")
+                elif new_password != new_password_confirm:
+                    st.error("❌ Passwords do not match.")
+                elif len(new_password) < 6:
+                    st.error("❌ Password must be at least 6 characters.")
                 else:
                     # 2. Remote Validation: Attempt to Log in to the Portal
                     with st.spinner("Attempting login to Contineo Portal..."):
@@ -293,7 +358,7 @@ if st.session_state.show_add_user_form:
 
                     # 3. Verify Result
                     if validation_html:
-                        st.success("✅ Credentials Validated Successfully!\nPlease Wait")
+                        st.success("Credentials Validated Successfully!\nPlease Wait...")
 
                         # 4. Save to Database (Only happens if validation passed)
                         save_success = db_utils.add_user_to_db_pg(
@@ -302,12 +367,13 @@ if st.session_state.show_add_user_form:
                             new_prn,
                             new_dob_day,
                             new_dob_month,
-                            new_dob_year
+                            new_dob_year,
+                            password=new_password
                         )
 
                         if save_success:
                             st.balloons()
-                            st.success(f"👤 User '{new_first_name}' saved to database.")
+                            st.success(f"User '{new_first_name}' saved to database.")
                             st.session_state.show_add_user_form = False
                             st.rerun()
                         else:
@@ -322,8 +388,14 @@ if st.session_state.show_add_user_form:
                         3. Portal is currently down.
                         4. Wrong semester portal selected — try switching between **Odd/Even Semester** above.
                         """)
-# Fetch Logic
-should_fetch = (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
+# Fetch Logic — only allowed when authenticated
+should_fetch = (
+    is_authenticated and
+    (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
+)
+
+if not is_authenticated and (fetch_button or force_refresh_button) and first_name_input:
+    st.sidebar.warning("Please log in first.")
 
 if should_fetch and first_name_input:
     set_item("last_username", first_name_input)
@@ -372,7 +444,7 @@ if should_fetch and first_name_input:
     else:
         st.error("User not found.")
 
-# --- Display Logic ---
+# Display Logic
 if st.session_state.student_data_result:
     pkg = st.session_state.student_data_result
     user = pkg["user_details"]
@@ -583,7 +655,10 @@ st.sidebar.markdown(
     <div class="sidebar-footer">
         <hr>
         <p style="font-size: 1rem; color: gray; margin-bottom: 0.5rem;">
-            Created by <b>Shaun Dsouza</b>
+            Created by 
+            <a href="https://github.com/dsouza-shaun" target="_blank" style="color: #4F8BF9; text-decoration: none; font-weight: bold;">
+                Shaun Dsouza
+            </a>
         </p>
         <p style="font-size: 0.85rem; color: gray; line-height: 1.2;">
             Based on 
