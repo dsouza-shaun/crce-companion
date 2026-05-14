@@ -403,7 +403,7 @@ def get_student_data_from_db(user_id):
         cursor.close()
         conn.close()
 
-def get_semester_leaderboard_pg(semester, limit=5):
+def get_semester_leaderboard_pg(semester, limit=10):
     """Gets top students for a specific semester."""
     conn = get_db_connection()
     if not conn: return []

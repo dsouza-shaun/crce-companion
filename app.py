@@ -58,7 +58,7 @@ def send_email_notification(user, user_email, message, rating):
         resend.Emails.send({
             "from": "Student App <onboarding@resend.dev>",
             "to": receiver_email,
-            "reply_to": reply_to_address,
+            "reply_to": reply_to_address,  # <--- THIS IS THE MAGIC LINE
             "subject": f"New Feedback from {user} ({rating} Stars)",
             "html": html_content
         })
@@ -321,7 +321,6 @@ if login_clicked and first_name_input:
             if not db_utils.user_has_password(first_name_input):
                 st.session_state.show_toast = ("warning", "⚠️ Account has no password set. Please re-register.")
             else:
-                # Success message is now plain text
                 st.session_state.show_toast = ("success", f"Logged in as {first_name_input}!")
             st.rerun()
         else:
@@ -629,22 +628,48 @@ if st.session_state.student_data_result:
                 if source == "Live Portal":
                     db_utils.save_student_sgpi_pg(user["id"], selected_sem, sgpa, db_details)
 
-                c1, c2, c3 = st.columns([2, 3, 2])
+                c1, c2 = st.columns([2, 3])
                 c1.metric("SGPA", f"{sgpa:.2f}")
                 with c2:
                     with st.expander("Subject Breakdown"):
                         for b in breakdown: st.markdown(f"- {b}")
-                with c3:
-                    if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
-                        lb = db_utils.get_semester_leaderboard_pg(selected_sem)
-                        if lb:
-                            st.write(f"**Top Students (Sem {selected_sem}):**")
-                            for i, (n, s) in enumerate(lb):
-                                icon = ["🥇", "🥈", "🥉"][i] if i < 3 else f"{i + 1}."
-                                bold = "**" if n == user['full_name'] else ""
-                                st.write(f"{icon} {bold}{n}: {s:.2f}{bold}")
-                        else:
-                            st.caption("No leaderboard data.")
+                if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
+                    lb = db_utils.get_semester_leaderboard_pg(selected_sem)
+                    if lb:
+                        RANK_STYLES = {
+                            1: ("🥇", "#FFD700", "#3d2e00"),
+                            2: ("🥈", "#C0C0C0", "#2a2a2a"),
+                            3: ("🥉", "#CD7F32", "#2e1a00"),
+                        }
+                        rows_html = ""
+                        for i, (name, score) in enumerate(lb):
+                            rank = i + 1
+                            medal, bg_light, bg_dark = RANK_STYLES.get(rank, ("", "transparent", "transparent"))
+                            is_you = name == user["full_name"]
+                            you_badge = ' <span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;background:rgba(128,128,128,0.15);font-weight:600;">You</span>' if is_you else ""
+                            rank_cell = f"{medal} {rank}" if medal else str(rank)
+                            rows_html += f"""
+                            <tr style="background:linear-gradient(90deg,{bg_light}18,transparent);font-weight:{'700' if rank<=3 else '400'};">
+                                <td style="padding:8px 12px;text-align:center;font-size:0.9rem;opacity:0.6;">{rank_cell}</td>
+                                <td style="padding:8px 12px;font-size:0.88rem;">{name}{you_badge}</td>
+                                <td style="padding:8px 12px;text-align:right;font-size:0.9rem;font-variant-numeric:tabular-nums;">{score:.2f}</td>
+                            </tr>"""
+                        st.markdown(f"""
+<style>
+.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}
+.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25);}}
+.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}
+.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}
+.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08);}}
+.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}
+</style>
+<table class="lb-table">
+  <thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead>
+  <tbody>{rows_html}</tbody>
+</table>
+""", unsafe_allow_html=True)
+                    else:
+                        st.caption("No leaderboard data.")
         else:
             st.info("No marks available for this semester.")
 
