@@ -40,6 +40,11 @@ The official Contineo student portal is tedious to use every day:
   - **Fetch Data** — Retrieves cached data from the database (instant).
   - **Get Live Data** — Scrapes the portal for the most up-to-the-minute information.
 
+## Demo
+
+![Streamlit App Mockup 1](assets/mockup-1.png)
+
+![Streamlit App Mockup 2](assets/mockup-2.png)
 
 ## Tech Stack
 
