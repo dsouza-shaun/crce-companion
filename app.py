@@ -168,112 +168,6 @@ if 'db_initialized' not in st.session_state:
     db_utils.create_feedback_table_pg()
     st.session_state.db_initialized = True
 
-st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
-st.header("🎓 CRCE Companion Dashboard")
-
-if not st.session_state.authenticated_user:
-    st.markdown("""
-    <style>
-    .welcome-card {
-        border: 1px solid var(--border-color, rgba(128,128,128,0.2));
-        border-radius: 10px;
-        padding: 20px 24px;
-        margin-bottom: 10px;
-    }
-    .welcome-card h4 {
-        margin: 0 0 14px 0;
-        font-size: 1.1rem;
-        font-weight: 600;
-    }
-    .welcome-steps {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-    }
-    .step {
-        display: flex;
-        align-items: flex-start;
-        gap: 12px;
-        border: 1px solid var(--border-color, rgba(128,128,128,0.15));
-        border-radius: 8px;
-        padding: 12px 15px;
-        flex: 1 1 180px;
-    }
-    .step-num {
-        font-size: 0.85rem;
-        font-weight: 700;
-        opacity: 0.45;
-        flex-shrink: 0;
-        margin-top: 2px;
-        letter-spacing: 0.03em;
-    }
-    .step-text strong {
-        display: block;
-        font-size: 0.95rem;
-        font-weight: 600;
-        margin-bottom: 4px;
-    }
-    .step-text span {
-        font-size: 0.9rem;
-        opacity: 0.8;
-        line-height: 1.5;
-    }
-    .mobile-tip {
-        margin-top: 15px;
-        padding: 10px 15px;
-        border-left: 4px solid #FF4B4B;
-        background-color: rgba(255, 75, 75, 0.05);
-        border-radius: 0 8px 8px 0;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: var(--text-color);
-    }
-    @media (max-width: 480px) {
-        .welcome-steps { flex-direction: column; }
-        .step { flex: 1 1 auto; }
-    }
-    </style>
-    <div class="welcome-card">
-        <h4>Getting Started</h4>
-        <div class="welcome-steps">
-            <div class="step">
-                <div class="step-num">01</div>
-                <div class="step-text">
-                    <strong>Register</strong>
-                    <span>Click <em>Register New Student</em> in the sidebar. Choose a username and password, then enter your PRN and date of birth exactly as they appear on the Contineo portal.</span>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-num">02</div>
-                <div class="step-text">
-                    <strong>Log In</strong>
-                    <span>Enter your username and password in the sidebar and click <em>Login</em>. You only need to do this once per session.</span>
-                </div>
-            </div>
-            <div class="step">
-                <div class="step-num">03</div>
-                <div class="step-text">
-                    <strong>View Your Data</strong>
-                    <span>Use <em>Fetch Data</em> for cached results or <em>Get Live Data</em> to pull the latest information directly from the portal.</span>
-                </div>
-            </div>
-        </div>
-        <div class="mobile-tip">
-            <strong>Mobile User?</strong> The sidebar is hidden by default. Tap the <strong>❯❯</strong> arrow icon at the top-left corner to open it.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# Injecting the PWA links pointing to local static folder
-st.markdown(
-    """
-    <link rel="manifest" href="/app/static/manifest.json">
-    <link rel="apple-touch-icon" href="/app/static/contineo.png">
-    <meta name="theme-color" content="#0e1117">
-    """,
-    unsafe_allow_html=True
-)
-
 if 'first_name' not in st.session_state:
     st.session_state.first_name = get_item(key="last_username") or ""
 if 'show_add_user_form' not in st.session_state:
@@ -284,6 +178,112 @@ if 'authenticated_user' not in st.session_state:
     st.session_state.authenticated_user = None  # username string when logged in
 if 'show_toast' not in st.session_state:
     st.session_state.show_toast = None
+
+st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
+st.header("🎓 CRCE Companion Dashboard")
+
+if not st.session_state.authenticated_user:
+    st.markdown("""
+<style>
+.welcome-card {
+    border: 1px solid var(--border-color, rgba(128,128,128,0.2));
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-bottom: 10px;
+}
+.welcome-card h4 {
+    margin: 0 0 14px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+.welcome-steps {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    border: 1px solid var(--border-color, rgba(128,128,128,0.15));
+    border-radius: 8px;
+    padding: 12px 15px;
+    flex: 1 1 180px;
+}
+.step-num {
+    font-size: 0.85rem;
+    font-weight: 700;
+    opacity: 0.45;
+    flex-shrink: 0;
+    margin-top: 2px;
+    letter-spacing: 0.03em;
+}
+.step-text strong {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.step-text span {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    line-height: 1.5;
+}
+.mobile-tip {
+    margin-top: 15px;
+    padding: 10px 15px;
+    border-left: 4px solid #FF4B4B;
+    background-color: rgba(255, 75, 75, 0.05);
+    border-radius: 0 8px 8px 0;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text-color);
+}
+@media (max-width: 480px) {
+    .welcome-steps { flex-direction: column; }
+    .step { flex: 1 1 auto; }
+}
+</style>
+<div class="welcome-card">
+    <h4>Getting Started</h4>
+    <div class="welcome-steps">
+        <div class="step">
+            <div class="step-num">01</div>
+            <div class="step-text">
+                <strong>Register</strong>
+                <span>Click <em>Register New Student</em> in the sidebar. Choose a username and password, then enter your PRN and date of birth exactly as they appear on the Contineo portal.</span>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">02</div>
+            <div class="step-text">
+                <strong>Log In</strong>
+                <span>Enter your username and password in the sidebar and click <em>Login</em>. You only need to do this once per session.</span>
+            </div>
+        </div>
+        <div class="step">
+            <div class="step-num">03</div>
+            <div class="step-text">
+                <strong>View Your Data</strong>
+                <span>Use <em>Fetch Data</em> for cached results or <em>Get Live Data</em> to pull the latest information directly from the portal.</span>
+            </div>
+        </div>
+    </div>
+    <div class="mobile-tip">
+        <strong>Mobile User?</strong> The sidebar is hidden by default. Tap the <strong>&#10095;&#10095;</strong> arrow icon at the top-left corner to open it.
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Injecting the PWA links pointing to local static folder
+st.markdown(
+    """
+    <link rel="manifest" href="/app/static/manifest.json">
+    <link rel="apple-touch-icon" href="/app/static/contineo.png">
+    <meta name="theme-color" content="#0e1117">
+    """,
+    unsafe_allow_html=True
+)
 
 
 def on_user_change():
@@ -319,7 +319,6 @@ if login_clicked and first_name_input:
             st.session_state.authenticated_user = first_name_input
             st.session_state.student_data_result = None
             if not db_utils.user_has_password(first_name_input):
-                # Warning remains with emoji as requested
                 st.session_state.show_toast = ("warning", "⚠️ Account has no password set. Please re-register.")
             else:
                 # Success message is now plain text
