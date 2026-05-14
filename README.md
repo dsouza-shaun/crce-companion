@@ -103,19 +103,9 @@ The official Contineo student portal is tedious to use every day:
 
 ## Project Structure
 
-```
-crce-companion/
-├── app.py              # Streamlit dashboard (main entry point)
-├── web_scraper.py      # Portal scraping & login logic
-├── db_utils.py         # PostgreSQL database operations
-├── config.py           # Portal URLs, subject mapping, DB config
-├── update_all.py       # Batch update script for all users
-├── main.py             # CLI version for quick lookups
-├── pyproject.toml      # Project metadata & dependencies (uv)
-├── static/             # PWA assets (icons, manifest)
-├── uv.lock             # Locked dependency versions
-└── .env                 # Environment variables (not committed)
-```
+A detailed breakdown of the repository is available in:
+
+[PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md)
 
 ## Disclaimer
 

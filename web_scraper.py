@@ -33,11 +33,21 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
 
         # Add hidden inputs
         hidden_inputs = login_form.find_all("input", {"type": "hidden"})
+
         for hidden_input in hidden_inputs:
-            name = hidden_input.get("name")
-            value = hidden_input.get("value")
-            if name and name not in payload:
-                payload[name] = value if value is not None else ""
+
+            raw_name = hidden_input.get("name")
+            raw_value = hidden_input.get("value")
+
+            # Ensure key is a proper string
+            if not isinstance(raw_name, str):
+                continue
+
+            name = str(raw_name)
+            value = str(raw_value) if raw_value is not None else ""
+
+            if name not in payload:
+                payload[name] = value
 
         # 3. POST Login
         form_action = login_form.get("action")
@@ -47,8 +57,6 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         response_post.raise_for_status()
         welcome_page_html = response_post.text
         lower_html = welcome_page_html.lower()
-
-        # --- 🔒 IMPROVED VALIDATION LOGIC ---
 
         # A. Check for explicit FAILURE messages
         # Most portals show these on the login screen if creds are wrong
@@ -63,7 +71,7 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         # We look for elements that ONLY exist on the Dashboard, not the Login page.
         soup_dash = BeautifulSoup(welcome_page_html, "html.parser")
         
-        # 1. Name Match (If provided)
+        # 1. Name Match
         name_matched = user_full_name_for_check.lower() in lower_html if user_full_name_for_check else False
         
         # 2. Dashboard Specifics (e.g., "Course", "Semester", specific IDs)
@@ -95,10 +103,10 @@ def extract_attendance_from_welcome_page(welcome_page_html):
     scripts = soup.find_all("script")
     for script in scripts:
         if script.string and "gaugeTypeMulti" in script.string:
-            columns_match = re.search(r"columns\s*:\s*(\[[\s\S]*?\])\s*,\s*type\s*:\s*\"gauge\"", script.string)
+            columns_match = re.search(r"columns\s*:\s*(\[[\s\S]*?])\s*,\s*type\s*:\s*\"gauge\"", script.string)
             if columns_match:
                 columns_str = columns_match.group(1)
-                pairs = re.findall(r"\[\s*['\"](.*?)['\"]\s*,\s*(\d+)\s*\]", columns_str)
+                pairs = re.findall(r"\[\s*['\"](.*?)['\"]\s*,\s*(\d+)\s*]", columns_str)
                 for subject, value in pairs:
                     attendance_data.append({
                         "subject": subject.strip(),
@@ -185,12 +193,12 @@ def scrape_subject_detail_page(session, url, base_url=None):
         table_data = _parse_table_marks_safely(soup)
 
         # 2. Parse Chart Data (Source of Truth for "Correct Column Mapping")
-        chart_match = re.search(r'var\s+chartData\s*=\s*(\[\{.*?\}\]);', html, re.DOTALL)
+        chart_match = re.search(r'var\s+chartData\s*=\s*(\[\{.*?}]);', html, re.DOTALL)
         
         if chart_match:
             json_str = chart_match.group(1)
             # Extract: { "xaxis": "ExamName", "maxmarks": 20, "optainmarks": 15.5 }
-            objects = re.findall(r'\{[^{}]*?"xaxis"\s*:\s*"([^"]+)"[^{}]*?"maxmarks"\s*:\s*([\d\.]+)[^{}]*?"optainmarks"\s*:\s*([\d\.]+)[^{}]*?\}', json_str, re.DOTALL)
+            objects = re.findall(r'\{[^{}]*?"xaxis"\s*:\s*"([^"]+)"[^{}]*?"maxmarks"\s*:\s*([\d.]+)[^{}]*?"optainmarks"\s*:\s*([\d.]+)[^{}]*?}', json_str, re.DOTALL)
             
             for exam_name, max_val, obt_val in objects:
                 try:
@@ -200,7 +208,7 @@ def scrape_subject_detail_page(session, url, base_url=None):
                     # --- HYBRID VALIDATION ---
                     if obt == 0:
                         # If Chart says 0, verify with Table.
-                        # If Table has an explicit entry for this exam and it is 0, accept it.
+                        # If Table has an explicit entry for this exam, and it is 0, accept it.
                         # If Table does NOT have this exam (cell was empty), reject the 0.
                         if exam_name in table_data and table_data[exam_name]['obtained'] == 0:
                             final_marks_data[exam_name] = {"obtained": 0.0, "max": max_m}
@@ -266,11 +274,11 @@ def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
                         absent = 0
                         
                         if green_span:
-                            m = re.search(r"\[(\d+)\]", green_span.get_text())
+                            m = re.search(r"\[(\d+)]", green_span.get_text())
                             if m: present = int(m.group(1))
                         
                         if red_span:
-                            m = re.search(r"\[(\d+)\]", red_span.get_text())
+                            m = re.search(r"\[(\d+)]", red_span.get_text())
                             if m: absent = int(m.group(1))
 
                         detailed_data[subject] = {

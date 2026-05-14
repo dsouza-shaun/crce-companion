@@ -5,7 +5,6 @@ import web_scraper
 import config 
 
 def run_application():
-    # --- Ensure DB table exists ---
     db_utils.create_db_and_table_pg() 
 
     first_name_input = input("Enter your username: ").strip()
@@ -71,7 +70,7 @@ def run_application():
         if not (session and welcome_page_html):
             print(f"Login FAILED for {portal_label} portal.")
             continue
-        # You might want to save the debug page only if a specific debug flag is set
+        # for debugging purposes, save the debug page only if a specific debug flag is set
         # with open("debug_welcome_page_from_script.html", "w", encoding="utf-8") as f:
         #     f.write(welcome_page_html)
 

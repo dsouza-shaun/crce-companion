@@ -1,8 +1,9 @@
-# db_utils.py
-import psycopg2
-import config
-from datetime import datetime
 import json
+from datetime import datetime
+
+import psycopg2
+
+import config
 
 DB_NAME_FOR_MESSAGES = "PostgreSQL (Neon.tech)"
 

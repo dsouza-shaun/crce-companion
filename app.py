@@ -1,4 +1,3 @@
-# app.py
 import math
 import os
 import re
@@ -9,7 +8,6 @@ import streamlit as st
 from dotenv import load_dotenv
 from streamlit_local_storage import LocalStorage
 
-# --- Local Storage Setup ---
 try:
     _localS = LocalStorage()
 except Exception:
@@ -31,7 +29,7 @@ import config
 import db_utils
 import web_scraper
 
-# --- Email Function ---
+# For emails
 import resend
 
 def send_email_notification(user, user_email, message, rating):
@@ -171,7 +169,12 @@ if 'db_initialized' not in st.session_state:
     st.session_state.db_initialized = True
 
 st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
-st.header("🎓 CRCE Companion")
+st.header("🎓 CRCE Companion Dashboard")
+
+st.info(
+    "On mobile, the sidebar is hidden by default. "
+    "Tap the '❯❯' icon on the top-left to access Login, Registration, and Data Fetch options."
+)
 
 # Injecting the PWA links pointing to local static folder
 st.markdown(
@@ -183,7 +186,6 @@ st.markdown(
     unsafe_allow_html=True
 )
 
-# --- Sidebar ---
 if 'first_name' not in st.session_state:
     st.session_state.first_name = get_item(key="last_username") or ""
 if 'show_add_user_form' not in st.session_state:
@@ -232,15 +234,38 @@ if st.session_state.show_add_user_form:
     with st.sidebar.expander("Add New Student Form", expanded=True):
         with st.form("new_user_form"):
             st.markdown("##### Enter New Student Details:")
-            st.info("⚠️ Details must match the University Portal exactly.")
+            st.info("Please provide details exactly as they appear in the Contineo Portal.")
 
-            new_first_name = st.text_input("App Username (e.g. 'gamer709'):").strip()
+            new_first_name = st.text_input(
+                "App Username (e.g. 'gamer709'):",
+                help="Choose a strong unique username and do not share it with anyone. "
+                     "This username will be used to log in to CRCE Companion."
+            ).strip()
             new_full_name = st.text_input("Full Name (as on Portal):").strip().upper()
-            new_prn = st.text_input("PRN(Or Roll no if you use that):").strip()
+            new_prn = st.text_input("Roll no. (Or PRN if you use that):").strip()
 
-            new_dob_day = st.text_input("Date (DD)", max_chars=2).strip()
-            new_dob_month = st.text_input("Month (MM)", max_chars=2).strip()
-            new_dob_year = st.text_input("Year (YYYY)", max_chars=4).strip()
+            new_dob_day = st.text_input(
+                "Date (DD)",
+                max_chars=2,
+                placeholder="DD"
+            ).strip()
+
+            new_dob_month = st.text_input(
+                "Month (MM)",
+                max_chars=2,
+                placeholder="MM"
+            ).strip()
+
+            new_dob_year = st.text_input(
+                "Year (YYYY)",
+                max_chars=4,
+                placeholder="YYYY"
+            ).strip()
+
+            # Keep only numeric input
+            new_dob_day = re.sub(r"\D", "", new_dob_day)
+            new_dob_month = re.sub(r"\D", "", new_dob_month)
+            new_dob_year = re.sub(r"\D", "", new_dob_year)
 
             submitted_add_user = st.form_submit_button("Validate & Save Student")
 
@@ -268,7 +293,7 @@ if st.session_state.show_add_user_form:
 
                     # 3. Verify Result
                     if validation_html:
-                        st.success("✅ Credentials Validated Successfully!")
+                        st.success("✅ Credentials Validated Successfully!\nPlease Wait")
 
                         # 4. Save to Database (Only happens if validation passed)
                         save_success = db_utils.add_user_to_db_pg(
@@ -297,7 +322,7 @@ if st.session_state.show_add_user_form:
                         3. Portal is currently down.
                         4. Wrong semester portal selected — try switching between **Odd/Even Semester** above.
                         """)
-# --- Fetch Logic ---
+# Fetch Logic
 should_fetch = (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
 
 if should_fetch and first_name_input:
@@ -376,7 +401,7 @@ if st.session_state.student_data_result:
         marks_data = current_data.get('cie', {})
         att_data = current_data.get('att', {})
 
-        # --- SGPI Calculation ---
+        # SGPA Calculation
         st.markdown(f"### Semester {selected_sem} Performance")
 
         total_credits = 0
@@ -436,14 +461,14 @@ if st.session_state.student_data_result:
                     })
 
             if total_credits > 0:
-                sgpi = weighted_gp / total_credits
+                sgpa = weighted_gp / total_credits
 
-                # Save SGPI if from Live Source
+                # Save SGPA if from Live Source
                 if source == "Live Portal":
-                    db_utils.save_student_sgpi_pg(user["id"], selected_sem, sgpi, db_details)
+                    db_utils.save_student_sgpi_pg(user["id"], selected_sem, sgpa, db_details)
 
                 c1, c2, c3 = st.columns([2, 3, 2])
-                c1.metric("SGPI", f"{sgpi:.2f}")
+                c1.metric("SGPA", f"{sgpa:.2f}")
                 with c2:
                     with st.expander("Subject Breakdown"):
                         for b in breakdown: st.markdown(f"- {b}")
@@ -534,16 +559,47 @@ if st.session_state.student_data_result:
 elif (fetch_button or force_refresh_button) and not first_name_input:
     st.sidebar.warning("Please enter a username to fetch data.")
 
-# --- Sidebar Footer ---
-st.sidebar.markdown("---")
-st.sidebar.caption("Created by **Shaun Dsouza**")
-st.sidebar.caption("Based on [Mark Lopes' Contineo](https://github.com/MarkLopes11/Contineo) version")
+# Sticky Bottom Sidebar Footer
+st.sidebar.markdown(
+    """
+    <style>
+    [data-testid="stSidebarContent"] {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
 
-# --- Append this to the very end of app.py ---
+    .sidebar-footer {
+        margin-top: auto;
+        padding-top: 1rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.markdown(
+    """
+    <div class="sidebar-footer">
+        <hr>
+        <p style="font-size: 1rem; color: gray; margin-bottom: 0.5rem;">
+            Created by <b>Shaun Dsouza</b>
+        </p>
+        <p style="font-size: 0.85rem; color: gray; line-height: 1.2;">
+            Based on 
+            <a href="https://github.com/MarkLopes11/Contineo" target="_blank" style="color: #4F8BF9;">
+                Mark Lopes' Contineo
+            </a> version
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
 st.divider()
 st.subheader("💬 Feedback & Support")
 
-with st.expander("Report a bug or leave a suggestion"):
+with st.expander("Report a bug or leave a suggestion", expanded=True):
     with st.form("feedback_form_main"):
         current_user = st.session_state.first_name.strip() if st.session_state.first_name else "Anonymous"
 

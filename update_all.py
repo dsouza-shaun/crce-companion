@@ -1,5 +1,3 @@
-# update_all_students.py
-
 import time
 from datetime import datetime
 import pytz
@@ -14,10 +12,7 @@ import db_utils
 import web_scraper
 import config
 
-# --- Configuration ---
 DELAY_BETWEEN_REQUESTS = 5  # Seconds to wait between students
-
-# --- Helper Functions ---
 
 def identify_target_semester(sub_code, default_sem):
     """
@@ -174,7 +169,7 @@ def run_update():
             success_count += 1
 
         except Exception as e:
-            print(f"   🚨 Error processing {full_name}: {e}")
+            print(f"   Error processing {full_name}: {e}")
             fail_count += 1
         
         # Rate Limiting

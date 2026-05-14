@@ -1,4 +1,3 @@
-# config.py
 import os
 
 NEON_DB_PASSWORD = os.environ.get("NEON_DB_PASSWORD")
@@ -15,7 +14,7 @@ PG_USER = os.environ.get("PG_USER", "neondb_owner")
 NEON_CONNECTION_STRING = f"postgresql://{PG_USER}:{NEON_DB_PASSWORD}@{PG_HOST}/{PG_DBNAME}?sslmode=require"
 
 
-# --- Portal Configuration ---
+# Portal Configuration
 LOGIN_URL_EVEN = "https://crce-students.contineo.in/parents/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
 LOGIN_URL_ODD = "https://crce-students.contineo.in/parentsodd/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
 
@@ -67,8 +66,8 @@ MAX_MARKS_CONFIG = {
         "TH-ISE1": 20,
         "TH-ISE2": 20,
         "ESE": 30,
-        "PR-ISE1": 25,  # Labs usually out of 25
-        "PR-ISE2": 25,
+        "PR-ISE1": 20,
+        "PR-ISE2": 30,
     },
 
     # B. SUBJECT SPECIFIC OVERRIDES
@@ -78,6 +77,34 @@ MAX_MARKS_CONFIG = {
     #     "PR-ISE1": 10,  # <--- HERE: You specify this is out of 10
     #     "PR-ISE2": 10   # <--- HERE: You specify this is out of 10
     # }
+
+    # INTEGRAL CALCULUS AND PROBABILITY THEORY
+    "25BSC11CE03": {
+        "MSE": 30,
+        "TH-ISE1": 20,
+        "TH-ISE2": 20,
+        "ESE": 30,
+        "TU-ISE1": 20,
+        "TU-ISE2": 30,
+    },
+
+    # HUMAN HEALTH SYSTEMS
+    "25ESC11CE04": {
+        "TH-ISE1": 20,
+        "TH-ISE2": 30
+    },
+
+    # CREATIVE CODING IN PYTHON
+    "25VSE11CE02": {
+        "PR-ISE1": 50,
+        "PR-ISE2": 50
+    },
+
+    # MEASURING INSTRUMENTS AND TESTING TOOLS
+    "25VSE11CE01": {
+        "PR-ISE1": 50,
+        "PR-ISE2": 50
+    },
 }
 
 def get_max_marks(subject_code, exam_type):
@@ -91,4 +118,4 @@ def get_max_marks(subject_code, exam_type):
             return MAX_MARKS_CONFIG[subject_code][exam_type]
 
     # 2. Fallback to Default values
-    return MAX_MARKS_CONFIG["DEFAULT"].get(exam_type, 20) # Default to 20 if unknown
+    return MAX_MARKS_CONFIG["DEFAULT"].get(exam_type, 20)
