@@ -59,6 +59,28 @@ SUBJECT_CODE_TO_NAME_MAP = {
     "25AEC11CE01": "ART OF COMMUNICATION"
 }
 
+SUBJECT_CODE_TO_CREDITS_MAP = {
+    # Semester 1
+    "25BSC11CE01" : 3,
+    "25BSC11CE04" : 3,
+    "25ESC11CE03": 4,
+    "25PCC11CE03": 3,
+    "25PCC11CE01": 1,
+    "25PCC11CE04": 2,
+    "25PCC11CE02": 2,
+    "25IKS11CE01": 2,
+
+    # Semester 2
+    "25BSC11CE03" : 3,
+    "25ESC11CE04" : 1,
+    "25ESC11CE02": 4,
+    "25VSE11CE02": 2,
+    "25BSC11CE02": 3,
+    "25ESC11CE01": 3,
+    "25VSE11CE01": 2,
+    "25AEC11CE01": 2
+}
+
 MAX_MARKS_CONFIG = {
     # A. DEFAULTS (Applied if no specific subject rule exists)
     "DEFAULT": {

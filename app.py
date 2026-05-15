@@ -574,12 +574,19 @@ if st.session_state.student_data_result:
             for sub_code, exams in marks_data.items():
                 sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
 
-                if "lab" in sub_name.lower():
-                    cred = 1
-                elif "project" in sub_name.lower():
-                    cred = 3
+                # Use hardcoded credit if available, else fallback to name-based logic
+                if sub_code in config.SUBJECT_CODE_TO_CREDITS_MAP:
+                    cred = config.SUBJECT_CODE_TO_CREDITS_MAP[sub_code]
                 else:
-                    cred = 3
+                    st.warning(f"⚠️ Using fallback credit calculation for {sub_name} ({sub_code}).")
+                    if "project" in sub_name.lower():
+                        cred = 3
+                    elif "tools" in sub_name.lower():
+                        cred = 2
+                    elif "lab" in sub_name.lower():
+                        cred = 1
+                    else:
+                        cred = 3
 
                 obt_sum = 0.0
                 max_sum = 0.0
@@ -593,8 +600,7 @@ if st.session_state.student_data_result:
 
                 if max_sum > 0:
                     perc = (obt_sum / max_sum) * 100
-                    rnd_perc = math.floor(perc + 0.5)
-                    gp = calculate_grade_point(rnd_perc)
+                    gp = calculate_grade_point(perc)
 
                     weighted_gp += (cred * gp)
                     total_credits += cred
@@ -670,6 +676,8 @@ if st.session_state.student_data_result:
 """, unsafe_allow_html=True)
                     else:
                         st.caption("No leaderboard data.")
+            else:
+                st.info("Could not calculate SGPA: Total credits are zero.")
         else:
             st.info("No marks available for this semester.")
 
