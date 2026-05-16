@@ -27,18 +27,28 @@ The official Contineo student portal is tedious to use every day:
 
 ## Features
 
-- **One-Time Registration** — Save your PRN and DOB once, linked to a username of your choice. Your credentials are validated against the live portal before saving.
+- **One-Time Registration** — Save your PRN and DOB once, linked to a username and password of your choice. Your credentials are validated against the live portal before saving. Passwords are securely hashed using bcrypt.
+- **Department Selection** — Choose your department (CE, CSE, ECS, or MECH) during registration for department-specific leaderboards and comparisons.
 - **Odd & Even Semester Support** — Automatically scrapes data from both the odd and even semester portals, so all your data is available in one place.
 - **Smart Attendance Tracker**
   - Displays current attendance percentage for every subject.
   - Calculates exactly how many lectures you can **miss** while staying above 75%.
   - Tells you how many lectures you must **attend** to get back to 75% if you're below.
-- **Detailed CIE Marks** — Clean breakdown of marks for MSE, ISE, ESE, and lab exams with per-subject totals.
-- **SGPA Calculation** — Automatically computes your Semester Grade Point Average with a subject-wise grade breakdown.
-- **Semester Leaderboards** — See how you rank against your classmates for any semester.
+- **Detailed CIE Marks** — Clean breakdown of marks for MSE, ISE, ESE, and lab exams with per-subject totals and configurable max marks per exam type.
+- **Advanced SGPA Calculation**
+  - Automatically computes your Semester Grade Point Average with a subject-wise grade breakdown.
+  - **Separated SGPA** — Calculates SGPA with Theory, Practical, and Tutorial components separately for accurate grading.
+- **Semester Leaderboards** — See how you rank against your classmates for any semester, with optional department filtering.
+- **Password Management**
+  - Secure password-based login with bcrypt hashing.
+  - **Forgot Password** — Reset your password by verifying your username and PRN.
+- **Feedback System** — Submit feedback with ratings and optional email. Notifications are sent via Resend for developer follow-up.
 - **Live Data & Caching**
   - **Fetch Data** — Retrieves cached data from the database (instant).
   - **Get Live Data** — Scrapes the portal for the most up-to-the-minute information.
+  - **Auto-Refresh** — Automatically fetches live data if cached data is older than 1 day.
+  - **Smart Fallback** — If live scraping fails, automatically falls back to cached data.
+- **Progressive Web App (PWA)** — Install the app on your mobile device for a native-like experience.
 
 ## Demo
 

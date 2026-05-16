@@ -84,6 +84,12 @@ def create_db_and_table_pg():
                 PRIMARY KEY (user_id, semester)
             );
         """)
+        cursor.execute("""
+            ALTER TABLE student_performance ADD COLUMN IF NOT EXISTS sgpi_separated FLOAT;
+        """)
+        cursor.execute("""
+            ALTER TABLE student_performance ADD COLUMN IF NOT EXISTS grade_details_separated JSONB;
+        """)
         conn.commit()
         print("Tables checked/created successfully.")
     except psycopg2.Error as e:
@@ -322,22 +328,26 @@ def update_attendance_in_db_pg(user_id, semester, attendance_data):
         cursor.close()
         conn.close()
 
-def save_student_sgpi_pg(user_id, semester, sgpi, grade_details):
+def save_student_sgpi_pg(user_id, semester, sgpi, grade_details, sgpi_separated=None, grade_details_separated=None):
     """Saves SGPI."""
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
     try:
-        json_grades = json.dumps(grade_details)
+        json_grades = json.dumps(grade_details) if grade_details else None
+        json_grades_sep = json.dumps(grade_details_separated) if grade_details_separated else None
+        
         cursor.execute("""
-            INSERT INTO student_performance (user_id, semester, sgpi, grade_details, updated_at)
-            VALUES (%s, %s, %s, %s, NOW())
+            INSERT INTO student_performance (user_id, semester, sgpi, grade_details, updated_at, sgpi_separated, grade_details_separated)
+            VALUES (%s, %s, %s, %s, NOW(), %s, %s)
             ON CONFLICT (user_id, semester) 
             DO UPDATE SET 
                 sgpi = EXCLUDED.sgpi,
                 grade_details = EXCLUDED.grade_details,
+                sgpi_separated = EXCLUDED.sgpi_separated,
+                grade_details_separated = EXCLUDED.grade_details_separated,
                 updated_at = NOW();
-        """, (user_id, semester, sgpi, json_grades))
+        """, (user_id, semester, sgpi, json_grades, sgpi_separated, json_grades_sep))
         conn.commit()
         return True
     except Exception as e:
@@ -383,12 +393,13 @@ def get_student_data_from_db(user_id):
             full_data[sem]['att'][sub] = {'attended': att, 'conducted': cond}
 
         # 3. Fetch SGPI
-        cursor.execute("SELECT semester, sgpi FROM student_performance WHERE user_id = %s", (user_id,))
+        cursor.execute("SELECT semester, sgpi, sgpi_separated FROM student_performance WHERE user_id = %s", (user_id,))
         sgpi_rows = cursor.fetchall()
         for r in sgpi_rows:
-            sem, val = r
+            sem, val, val_sep = r
             if sem in full_data:
                 full_data[sem]['sgpi'] = val
+                full_data[sem]['sgpi_separated'] = val_sep
 
         if not full_data: return None
 
@@ -462,24 +473,30 @@ def get_semester_leaderboard_pg(semester, department=None, limit=10):
     if not conn: return []
     cursor = conn.cursor()
     try:
+        # COALESCE uses sgpi_separated if available, otherwise falls back to sgpi
+        select_clause = "SELECT u.full_name, COALESCE(sp.sgpi_separated, sp.sgpi) as sgpa"
+
         if department and department != "NA":
-            cursor.execute("""
-                SELECT u.full_name, sp.sgpi
+            cursor.execute(f"""
+                {select_clause}
                 FROM student_performance sp
                 JOIN users u ON sp.user_id = u.id
-                WHERE sp.semester = %s AND u.department = %s
-                ORDER BY sp.sgpi DESC
+                WHERE sp.semester = %s AND u.department = %s 
+                AND COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL
+                ORDER BY sgpa DESC
                 LIMIT %s
             """, (semester, department, limit))
         else:
-            cursor.execute("""
-                SELECT u.full_name, sp.sgpi
+            cursor.execute(f"""
+                {select_clause}
                 FROM student_performance sp
                 JOIN users u ON sp.user_id = u.id
-                WHERE sp.semester = %s
-                ORDER BY sp.sgpi DESC
+                WHERE sp.semester = %s 
+                AND COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL
+                ORDER BY sgpa DESC
                 LIMIT %s
             """, (semester, limit))
+
         return cursor.fetchall()
     except Exception as e:
         print(f"Error fetching leaderboard: {e}")

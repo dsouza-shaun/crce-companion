@@ -233,10 +233,109 @@ def compute_sgpa(cie_data):
     }
 
 
+def compute_sgpa_separated(cie_data):
+    if not cie_data:
+        return None
+
+    total_credits = 0
+    weighted_gp = 0
+    breakdown = []
+    db_details = []
+    fallback_warnings = []
+
+    for sub_code, exams in cie_data.items():
+        sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
+        
+        has_separated_logic = sub_code in config.SUBJECT_CREDIT_BREAKDOWN
+        if not has_separated_logic:
+            # fallback to normal logic if missing from separated map
+            cred, is_fallback = _resolve_credits(sub_code, sub_name)
+            if is_fallback:
+                fallback_warnings.append(f"{sub_name} ({sub_code})")
+            
+            obt_sum = 0.0
+            max_sum = 0.0
+            for ex, val in exams.items():
+                o = val.get('obtained', 0)
+                m = val.get('max', 0)
+                if isinstance(o, (int, float)):
+                    obt_sum += o
+                    max_sum += m if m > 0 else config.get_max_marks(sub_code, ex)
+
+            if max_sum > 0:
+                perc = (obt_sum / max_sum) * 100
+                gp = calculate_grade_point(perc)
+                grade = _grade_letter(gp)
+                weighted_gp += cred * gp
+                total_credits += cred
+                breakdown.append(f"**{sub_name}**: {perc:.1f}% → {grade} ({gp})")
+                db_details.append({
+                    "subject_code": sub_code, "subject_name": sub_name,
+                    "component": "Total",
+                    "percentage": float(f"{perc:.2f}"), "grade_point": gp,
+                    "grade_letter": grade, "credits": cred
+                })
+            continue
+            
+        credits_map = config.SUBJECT_CREDIT_BREAKDOWN[sub_code]
+        components = {"TH": {"obt": 0.0, "max": 0.0}, "PR": {"obt": 0.0, "max": 0.0}, "TU": {"obt": 0.0, "max": 0.0}}
+        
+        for ex, val in exams.items():
+            o = val.get('obtained', 0)
+            m = val.get('max', 0)
+            if isinstance(o, (int, float)):
+                m_actual = m if m > 0 else config.get_max_marks(sub_code, ex)
+                
+                # Determine bucket
+                if "PR-" in ex:
+                    comp = "PR"
+                elif "TU-" in ex:
+                    comp = "TU"
+                else:
+                    comp = "TH"
+                    
+                components[comp]["obt"] += o
+                components[comp]["max"] += m_actual
+                
+        for comp in ["TH", "PR", "TU"]:
+            cred = credits_map.get(comp, 0)
+            c_max = components[comp]["max"]
+            c_obt = components[comp]["obt"]
+            if cred > 0 and c_max > 0:
+                perc = (c_obt / c_max) * 100
+                gp = calculate_grade_point(perc)
+                grade = _grade_letter(gp)
+                weighted_gp += cred * gp
+                total_credits += cred
+                
+                comp_label = "Theory" if comp == "TH" else "Practical" if comp == "PR" else "Tutorial"
+                breakdown.append(f"**{sub_name}** ({comp_label}): {perc:.1f}% → {grade} ({gp})")
+                db_details.append({
+                    "subject_code": sub_code, "subject_name": sub_name,
+                    "component": comp,
+                    "percentage": float(f"{perc:.2f}"), "grade_point": gp,
+                    "grade_letter": grade, "credits": cred
+                })
+
+    if total_credits == 0:
+        return None
+
+    return {
+        "sgpa": weighted_gp / total_credits,
+        "total_credits": total_credits,
+        "breakdown": breakdown,
+        "db_details": db_details,
+        "fallback_warnings": fallback_warnings,
+    }
+
+
 def calculate_and_save_sgpa(user_id, sem, cie_data):
     result = compute_sgpa(cie_data)
+    result_sep = compute_sgpa_separated(cie_data)
     if result:
-        db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"])
+        sgpa_sep = result_sep["sgpa"] if result_sep else None
+        details_sep = result_sep["db_details"] if result_sep else None
+        db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"], sgpa_sep, details_sep)
 
 # --- Init ---
 if 'db_initialized' not in st.session_state:
@@ -728,16 +827,36 @@ if st.session_state.student_data_result:
 
         if marks_data:
             sgpa_result = compute_sgpa(marks_data)
+            sgpa_sep_result = compute_sgpa_separated(marks_data)
 
-            if sgpa_result:
-                for warn_sub in sgpa_result["fallback_warnings"]:
-                    st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
+            if sgpa_result or sgpa_sep_result:
+                if sgpa_sep_result:
+                    for warn_sub in sgpa_sep_result["fallback_warnings"]:
+                        st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
+                elif sgpa_result:
+                    for warn_sub in sgpa_result["fallback_warnings"]:
+                        st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
 
-                c1, c2 = st.columns([2, 3])
-                c1.metric("SGPA", f"{sgpa_result['sgpa']:.2f}")
+                c1, c2 = st.columns(2)
+
+                with c1:
+                    if sgpa_sep_result:
+                        st.metric("Estimated SGPA (Using Separate Components)", f"{sgpa_sep_result['sgpa']:.2f}")
+                        st.info(
+                            "Component-Wise: Calculates Theory, Tutorial & Practical independently. Each component's grade point is weighted by its exact credit (e.g., TH=2, TU=1, PR=1). Matches the official curriculum structure.")
+                        with st.expander("View Subject Breakdown (Separated)"):
+                            for b in sgpa_sep_result["breakdown"]:
+                                st.markdown(f"- {b}")
+
                 with c2:
-                    with st.expander("Subject Breakdown"):
-                        for b in sgpa_result["breakdown"]: st.markdown(f"- {b}")
+                    if sgpa_result:
+                        st.metric("Estimated SGPA (Using Total Marks)", f"{sgpa_result['sgpa']:.2f}")
+                        st.info(
+                            "Aggregates all marks per subject into one percentage before applying total credits. Kept for backward compatibility while the college's official method is verified. Use Separated SGPA as primary.")
+                        with st.expander("View Subject Breakdown (Total)"):
+                            for b in sgpa_result["breakdown"]:
+                                st.markdown(f"- {b}")
+
                 if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
                     user_dept = user.get("department", "NA")
 
