@@ -35,9 +35,12 @@ def create_db_and_table_pg():
             )
         ''')
 
-        # Migrate existing deployments that pre-date the password_hash column
         cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT
+        ''')
+
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT DEFAULT 'NA'
         ''')
 
         # 2. CIE Marks Table
@@ -89,7 +92,7 @@ def create_db_and_table_pg():
         cursor.close()
         conn.close()
 
-def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, password=None):
+def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, password=None, department="NA"):
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
@@ -99,9 +102,9 @@ def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, 
             password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
         cursor.execute('''
-            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year, password_hash)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year, password_hash))
+            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year, password_hash, department)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year, password_hash, department))
         conn.commit()
         return True
     except psycopg2.IntegrityError:
@@ -188,14 +191,15 @@ def get_user_from_db_pg(first_name_query):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            SELECT id, full_name, prn, dob_day, dob_month, dob_year
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department
             FROM users WHERE first_name = %s
         ''', (first_name_query.lower().strip(),))
         row = cursor.fetchone()
         if row:
             return {
                 "id": row[0], "full_name": row[1], "prn": row[2],
-                "dob_day": row[3], "dob_month": row[4], "dob_year": row[5]
+                "dob_day": row[3], "dob_month": row[4], "dob_year": row[5],
+                "department": row[6] if row[6] else "NA"
             }
         return None
     finally:
@@ -209,7 +213,7 @@ def get_all_users_from_db_pg():
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            SELECT id, full_name, prn, dob_day, dob_month, dob_year
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department
             FROM users
             ORDER BY id
         ''')
@@ -218,7 +222,8 @@ def get_all_users_from_db_pg():
         for row in rows:
             users.append({
                 "id": row[0], "full_name": row[1], "prn": row[2],
-                "dob_day": row[3], "dob_month": row[4], "dob_year": row[5]
+                "dob_day": row[3], "dob_month": row[4], "dob_year": row[5],
+                "department": row[6] if row[6] else "NA"
             })
         return users
     except Exception as e:
@@ -403,20 +408,49 @@ def get_student_data_from_db(user_id):
         cursor.close()
         conn.close()
 
-def get_semester_leaderboard_pg(semester, limit=10):
-    """Gets top students for a specific semester."""
+def set_user_department(first_name, department):
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET department = %s WHERE first_name = %s",
+            (department, first_name.lower().strip())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Set department error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_semester_leaderboard_pg(semester, department=None, limit=10):
     conn = get_db_connection()
     if not conn: return []
     cursor = conn.cursor()
     try:
-        cursor.execute("""
-            SELECT u.full_name, sp.sgpi
-            FROM student_performance sp
-            JOIN users u ON sp.user_id = u.id
-            WHERE sp.semester = %s
-            ORDER BY sp.sgpi DESC
-            LIMIT %s
-        """, (semester, limit))
+        if department and department != "NA":
+            cursor.execute("""
+                SELECT u.full_name, sp.sgpi
+                FROM student_performance sp
+                JOIN users u ON sp.user_id = u.id
+                WHERE sp.semester = %s AND u.department = %s
+                ORDER BY sp.sgpi DESC
+                LIMIT %s
+            """, (semester, department, limit))
+        else:
+            cursor.execute("""
+                SELECT u.full_name, sp.sgpi
+                FROM student_performance sp
+                JOIN users u ON sp.user_id = u.id
+                WHERE sp.semester = %s
+                ORDER BY sp.sgpi DESC
+                LIMIT %s
+            """, (semester, limit))
         return cursor.fetchall()
     except Exception as e:
         print(f"Error fetching leaderboard: {e}")

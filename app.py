@@ -239,9 +239,11 @@ if 'show_add_user_form' not in st.session_state:
 if 'student_data_result' not in st.session_state:
     st.session_state.student_data_result = None
 if 'authenticated_user' not in st.session_state:
-    st.session_state.authenticated_user = None  # username string when logged in
+    st.session_state.authenticated_user = None
 if 'show_toast' not in st.session_state:
     st.session_state.show_toast = None
+if 'show_dept_prompt' not in st.session_state:
+    st.session_state.show_dept_prompt = False
 
 st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
 st.header("🎓 CRCE Companion Dashboard")
@@ -382,6 +384,9 @@ if login_clicked and first_name_input:
         if pw_ok:
             st.session_state.authenticated_user = first_name_input
             st.session_state.student_data_result = None
+            fetched_user = db_utils.get_user_from_db_pg(first_name_input)
+            if fetched_user and fetched_user.get("department", "NA") == "NA":
+                st.session_state.show_dept_prompt = True
             if not db_utils.user_has_password(first_name_input):
                 st.session_state.show_toast = ("warning", "⚠️ Account has no password set. Please re-register.")
             else:
@@ -396,6 +401,20 @@ is_authenticated = (st.session_state.authenticated_user == first_name_input) if 
 if st.session_state.get("show_toast"):
     st.toast(st.session_state.show_toast[1])
     st.session_state.show_toast = None
+
+DEPARTMENTS = ["CE", "CSE", "ECS", "MECH"]
+
+@st.dialog("Select Your Department")
+def department_prompt_dialog(username):
+    st.write("Your department has not been set. Please choose your department to continue.")
+    chosen_dept = st.selectbox("Department", DEPARTMENTS)
+    if st.button("Save", type="primary"):
+        db_utils.set_user_department(username, chosen_dept)
+        st.session_state.show_dept_prompt = False
+        st.rerun()
+
+if st.session_state.get("show_dept_prompt") and st.session_state.authenticated_user:
+    department_prompt_dialog(st.session_state.authenticated_user)
 
 # i have commented the below functionality
 # because it was redundant but i have kept it for backward comaptibility
@@ -481,6 +500,12 @@ if st.session_state.show_add_user_form:
             new_dob_month = re.sub(r"\D", "", new_dob_month)
             new_dob_year = re.sub(r"\D", "", new_dob_year)
 
+            new_department = st.selectbox(
+                "Department:",
+                options=["CE", "CSE", "ECS", "MECH"],
+                help="Select your department."
+            )
+
             submitted_add_user = st.form_submit_button("Validate & Save Student")
 
             if submitted_add_user:
@@ -521,7 +546,8 @@ if st.session_state.show_add_user_form:
                             new_dob_day,
                             new_dob_month,
                             new_dob_year,
-                            password=new_password
+                            password=new_password,
+                            department=new_department
                         )
 
                         if save_success:
@@ -732,53 +758,52 @@ if st.session_state.student_data_result:
                 with c2:
                     with st.expander("Subject Breakdown"):
                         for b in breakdown: st.markdown(f"- {b}")
-                if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
-                    lb = db_utils.get_semester_leaderboard_pg(selected_sem)
-                    if lb:
+                if st.button(f"Sem {selected_sem} Leaderboard"):
+                    user_dept = user.get("department", "NA")
+
+                    def render_leaderboard_table(lb, current_user_full_name):
+                        if not lb:
+                            st.caption("No leaderboard data.")
+                            return
                         RANK_STYLES = {
-                            1: ("🥇", "#FFD700", "#3d2e00"),
-                            2: ("🥈", "#C0C0C0", "#2a2a2a"),
-                            3: ("🥉", "#CD7F32", "#2e1a00"),
+                            1: ("#FFD700", "#3d2e00"),
+                            2: ("#C0C0C0", "#2a2a2a"),
+                            3: ("#CD7F32", "#2e1a00"),
                         }
-                        rows_html = " "
+                        MEDALS = {1: "1", 2: "2", 3: "3"}
+                        rows_html = ""
                         prev_score = None
                         current_rank = 0
-                        
-                        for i, (name, score) in enumerate(lb):
+                        for name, score in lb:
                             if prev_score is None:
                                 current_rank = 1
                             elif score < prev_score:
                                 current_rank += 1
-                            
-                            rank = current_rank
                             prev_score = score
-
-                            medal, bg_light, bg_dark = RANK_STYLES.get(rank, (" ", "transparent ", "transparent "))
-                            is_you = name == user["full_name"]
+                            bg_light, bg_dark = RANK_STYLES.get(current_rank, ("transparent", "transparent"))
+                            is_you = name == current_user_full_name
                             you_badge = ' <span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;background:rgba(128,128,128,0.15);font-weight:600;">You</span>' if is_you else ""
-                            rank_cell = f"{medal} {rank}" if medal else str(rank)
-                            rows_html += f"""
-                            <tr style="background:linear-gradient(90deg,{bg_light}18,transparent);font-weight:{'700' if rank<=3 else '400'};">
-                                <td style="padding:8px 12px;text-align:center;font-size:0.9rem;opacity:0.6;">{rank_cell}</td>
-                                <td style="padding:8px 12px;font-size:0.88rem;">{name}{you_badge}</td>
-                                <td style="padding:8px 12px;text-align:right;font-size:0.9rem;font-variant-numeric:tabular-nums;">{score:.2f}</td>
-                            </tr>"""
-                        st.markdown(f"""
-<style>
-.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}
-.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25);}}
-.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}
-.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}
-.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08);}}
-.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}
-</style>
-<table class="lb-table">
-  <thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead>
-  <tbody>{rows_html}</tbody>
-</table>
-""", unsafe_allow_html=True)
+                            rank_cell = str(current_rank)
+                            rows_html += f'<tr style="background:linear-gradient(90deg,{bg_light}18,transparent);font-weight:{"700" if current_rank <= 3 else "400"};"><td style="padding:8px 12px;text-align:center;font-size:0.9rem;opacity:0.6;">{rank_cell}</td><td style="padding:8px 12px;font-size:0.88rem;">{name}{you_badge}</td><td style="padding:8px 12px;text-align:right;font-size:0.9rem;font-variant-numeric:tabular-nums;">{score:.2f}</td></tr>'
+                        st.markdown(f"""<style>.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25)}}.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08)}}.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}</style><table class="lb-table"><thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead><tbody>{rows_html}</tbody></table>""", unsafe_allow_html=True)
+
+                    tabs_to_show = ["Grand Leaderboard"]
+                    if user_dept and user_dept != "NA":
+                        tabs_to_show = [f"{user_dept} Leaderboard", "Grand Leaderboard"]
+
+                    lb_tabs = st.tabs(tabs_to_show)
+
+                    if user_dept and user_dept != "NA":
+                        with lb_tabs[0]:
+                            dept_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept)
+                            render_leaderboard_table(dept_lb, user["full_name"])
+                        with lb_tabs[1]:
+                            grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
+                            render_leaderboard_table(grand_lb, user["full_name"])
                     else:
-                        st.caption("No leaderboard data.")
+                        with lb_tabs[0]:
+                            grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
+                            render_leaderboard_table(grand_lb, user["full_name"])
             else:
                 st.info("Could not calculate SGPA: Total credits are zero.")
         else:
@@ -885,12 +910,6 @@ st.sidebar.markdown(
             <a href="https://github.com/dsouza-shaun" target="_blank" style="color: #4F8BF9; text-decoration: none; font-weight: bold;">
                 Shaun Dsouza
             </a>
-        </p>
-        <p style="font-size: 0.85rem; color: gray; line-height: 1.2;">
-            Inspired by 
-            <a href="https://github.com/MarkLopes11/Contineo" target="_blank" style="color: #4F8BF9;">
-                Mark Lopes' Contineo
-            </a> version
         </p>
     </div>
     """,
