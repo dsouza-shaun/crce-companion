@@ -162,6 +162,70 @@ def calculate_grade_point(percentage):
     return 0
 
 
+def calculate_and_save_sgpa(user_id, sem, cie_data):
+    """Calculates SGPA for a semester and saves it to the DB."""
+    total_credits = 0
+    weighted_gp = 0
+    db_details = []
+
+    if not cie_data:
+        return
+
+    for sub_code, exams in cie_data.items():
+        sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
+
+        # Credits Logic: Use Map -> Project -> Lab -> Default
+        if sub_code in config.SUBJECT_CODE_TO_CREDITS_MAP:
+            cred = config.SUBJECT_CODE_TO_CREDITS_MAP[sub_code]
+        elif "project" in sub_name.lower():
+            cred = 3
+        elif "lab" in sub_name.lower():
+            cred = 1
+        else:
+            cred = 3
+
+        obt_sum = 0.0
+        max_sum = 0.0
+        for ex, val in exams.items():
+            o = val.get('obtained', 0)
+            m = val.get('max', 0)
+            if isinstance(o, (int, float)):
+                obt_sum += o
+                max_sum += m if m > 0 else config.get_max_marks(sub_code, ex)
+
+        if max_sum > 0:
+            perc = (obt_sum / max_sum) * 100
+            gp = calculate_grade_point(perc)
+            weighted_gp += (cred * gp)
+            total_credits += cred
+
+            # Determine Grade Letter
+            grade = "F"
+            if gp == 10:
+                grade = "O"
+            elif gp == 9:
+                grade = "A"
+            elif gp == 8:
+                grade = "B"
+            elif gp == 7:
+                grade = "C"
+            elif gp == 6:
+                grade = "D"
+            elif gp == 5:
+                grade = "E"
+            elif gp == 4:
+                grade = "P"
+
+            db_details.append({
+                "subject_code": sub_code, "subject_name": sub_name,
+                "percentage": float(f"{perc:.2f}"), "grade_point": gp,
+                "grade_letter": grade, "credits": cred
+            })
+
+    if total_credits > 0:
+        sgpa = weighted_gp / total_credits
+        db_utils.save_student_sgpi_pg(user_id, sem, sgpa, db_details)
+
 # --- Init ---
 if 'db_initialized' not in st.session_state:
     db_utils.create_db_and_table_pg()
@@ -495,35 +559,64 @@ if should_fetch and first_name_input:
         source = "Database"
 
         # 1. Try DB Cache
+        cached_result = None
         if not force_refresh_button:
             with st.spinner("Checking cache..."):
-                result = db_utils.get_student_data_from_db(user_details["id"])
+                cached_result = db_utils.get_student_data_from_db(user_details["id"])
 
-        # 2. Scrape if needed
-        if not result or force_refresh_button:
+        result = cached_result
+        source = "Database"
+
+        # Auto-refresh if cache is older than 1 day
+        force_auto_refresh = False
+        if result and result.get("scraped_at"):
+            now_utc = datetime.now(pytz.utc)
+            scraped_time = result.get("scraped_at")
+
+            # Safety check for timezone awareness
+            if scraped_time.tzinfo is None:
+                scraped_time = scraped_time.replace(tzinfo=pytz.utc)
+
+            if (now_utc - scraped_time).days >= 1:
+                force_auto_refresh = True
+
+        # 2. Scrape if needed (Forced or Auto-refresh)
+        if force_refresh_button or force_auto_refresh or not result:
+            if force_auto_refresh:
+                st.toast("Data is older than 1 day. Fetching live update...")
+
             source = "Live Portal"
-            # Determine which portal(s) to scrape based on sidebar selection
-            if selected_sem_type == "both":
-                sem_types_to_scrape = ["even", "odd"]
-            else:
-                sem_types_to_scrape = [selected_sem_type]
+            sem_types_to_scrape = ["even", "odd"] if selected_sem_type == "both" else [selected_sem_type]
             spinner_msg = f"Fetching from {selected_sem_type_label.lower()} portal..."
+
             with st.spinner(spinner_msg):
                 scrape_res = scrape_fresh_data(user_details, semester_types=sem_types_to_scrape)
-                if scrape_res:
-                    result = scrape_res
-                    # Save to DB (Marks & Attendance linked to Current Semester)
-                    for sem, data in result["semesters_data"].items():
-                        db_utils.update_student_marks_in_db_pg(
-                            user_details["id"], sem, data['cie'], result["scraped_at"]
-                        )
-                        db_utils.update_attendance_in_db_pg(
-                            user_details["id"], sem, data['att']
-                        )
+
+            if scrape_res:
+                result = scrape_res
+                # Save to DB (Marks, Attendance & SGPA)
+                for sem, data in result["semesters_data"].items():
+                    db_utils.update_student_marks_in_db_pg(
+                        user_details["id"], sem, data['cie'], result["scraped_at"]
+                    )
+                    db_utils.update_attendance_in_db_pg(
+                        user_details["id"], sem, data['att']
+                    )
+                    if data.get('cie'):
+                        calculate_and_save_sgpa(user_details["id"], sem, data['cie'])
 
                     # Add latest_sem logic for display
                     latest = max(result["semesters_data"].keys()) if result["semesters_data"] else None
                     result["latest_sem"] = latest
+            else:
+                # FALLBACK: If live fetch fails, revert to cached data
+                if cached_result:
+                    result = cached_result
+                    source = "Database (Cached Fallback)"
+                    st.warning("Live update failed. Showing cached data.")
+                else:
+                    result = None
+                    st.error("Live update failed and no cached data available.")
 
         if result:
             st.session_state.student_data_result = {"user_details": user_details, "data_pkg": result, "source": source}
@@ -647,10 +740,20 @@ if st.session_state.student_data_result:
                             2: ("🥈", "#C0C0C0", "#2a2a2a"),
                             3: ("🥉", "#CD7F32", "#2e1a00"),
                         }
-                        rows_html = ""
+                        rows_html = " "
+                        prev_score = None
+                        current_rank = 0
+                        
                         for i, (name, score) in enumerate(lb):
-                            rank = i + 1
-                            medal, bg_light, bg_dark = RANK_STYLES.get(rank, ("", "transparent", "transparent"))
+                            if prev_score is None:
+                                current_rank = 1
+                            elif score < prev_score:
+                                current_rank += 1
+                            
+                            rank = current_rank
+                            prev_score = score
+
+                            medal, bg_light, bg_dark = RANK_STYLES.get(rank, (" ", "transparent ", "transparent "))
                             is_you = name == user["full_name"]
                             you_badge = ' <span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;background:rgba(128,128,128,0.15);font-weight:600;">You</span>' if is_you else ""
                             rank_cell = f"{medal} {rank}" if medal else str(rank)
