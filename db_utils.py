@@ -408,6 +408,35 @@ def get_student_data_from_db(user_id):
         cursor.close()
         conn.close()
 
+def reset_password_by_prn(first_name, prn, new_password):
+    """Resets password after verifying that first_name and PRN match. Returns True on success, False if not found or mismatch."""
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "SELECT id FROM users WHERE first_name = %s AND prn = %s",
+            (first_name.lower().strip(), prn.strip())
+        )
+        row = cursor.fetchone()
+        if not row:
+            return False
+        password_hash = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        cursor.execute(
+            "UPDATE users SET password_hash = %s WHERE id = %s",
+            (password_hash, row[0])
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Reset password error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def set_user_department(first_name, department):
     conn = get_db_connection()
     if not conn: return False
@@ -459,9 +488,6 @@ def get_semester_leaderboard_pg(semester, department=None, limit=10):
         cursor.close()
         conn.close()
 
-
-# db_utils.py
-
 def create_feedback_table_pg():
     conn = get_db_connection()
     if conn:
@@ -480,7 +506,7 @@ def create_feedback_table_pg():
         conn.commit()
         conn.close()
 
-def save_feedback_pg(username, email, message, rating): # <--- Added email param
+def save_feedback_pg(username, email, message, rating):
     conn = get_db_connection()
     if conn:
         try:

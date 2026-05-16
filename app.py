@@ -162,27 +162,42 @@ def calculate_grade_point(percentage):
     return 0
 
 
-def calculate_and_save_sgpa(user_id, sem, cie_data):
-    """Calculates SGPA for a semester and saves it to the DB."""
+def _grade_letter(gp):
+    return {10: "O", 9: "A", 8: "B", 7: "C", 6: "D", 5: "E", 4: "P"}.get(gp, "F")
+
+
+def _resolve_credits(sub_code, sub_name):
+    if sub_code in config.SUBJECT_CODE_TO_CREDITS_MAP:
+        return config.SUBJECT_CODE_TO_CREDITS_MAP[sub_code], False
+    if "project" in sub_name.lower():
+        return 3, True
+    if "tools" in sub_name.lower():
+        return 2, True
+    if "lab" in sub_name.lower():
+        return 1, True
+    return 3, True
+
+
+def compute_sgpa(cie_data):
+    """
+    Pure calculation — no DB calls, no Streamlit calls.
+    Returns a dict with keys: sgpa, total_credits, breakdown, db_details, fallback_warnings.
+    Returns None if cie_data is empty or credits total to zero.
+    """
+    if not cie_data:
+        return None
+
     total_credits = 0
     weighted_gp = 0
+    breakdown = []
     db_details = []
-
-    if not cie_data:
-        return
+    fallback_warnings = []
 
     for sub_code, exams in cie_data.items():
         sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
-
-        # Credits Logic: Use Map -> Project -> Lab -> Default
-        if sub_code in config.SUBJECT_CODE_TO_CREDITS_MAP:
-            cred = config.SUBJECT_CODE_TO_CREDITS_MAP[sub_code]
-        elif "project" in sub_name.lower():
-            cred = 3
-        elif "lab" in sub_name.lower():
-            cred = 1
-        else:
-            cred = 3
+        cred, is_fallback = _resolve_credits(sub_code, sub_name)
+        if is_fallback:
+            fallback_warnings.append(f"{sub_name} ({sub_code})")
 
         obt_sum = 0.0
         max_sum = 0.0
@@ -196,35 +211,32 @@ def calculate_and_save_sgpa(user_id, sem, cie_data):
         if max_sum > 0:
             perc = (obt_sum / max_sum) * 100
             gp = calculate_grade_point(perc)
-            weighted_gp += (cred * gp)
+            grade = _grade_letter(gp)
+            weighted_gp += cred * gp
             total_credits += cred
-
-            # Determine Grade Letter
-            grade = "F"
-            if gp == 10:
-                grade = "O"
-            elif gp == 9:
-                grade = "A"
-            elif gp == 8:
-                grade = "B"
-            elif gp == 7:
-                grade = "C"
-            elif gp == 6:
-                grade = "D"
-            elif gp == 5:
-                grade = "E"
-            elif gp == 4:
-                grade = "P"
-
+            breakdown.append(f"**{sub_name}**: {perc:.1f}% → {grade} ({gp})")
             db_details.append({
                 "subject_code": sub_code, "subject_name": sub_name,
                 "percentage": float(f"{perc:.2f}"), "grade_point": gp,
                 "grade_letter": grade, "credits": cred
             })
 
-    if total_credits > 0:
-        sgpa = weighted_gp / total_credits
-        db_utils.save_student_sgpi_pg(user_id, sem, sgpa, db_details)
+    if total_credits == 0:
+        return None
+
+    return {
+        "sgpa": weighted_gp / total_credits,
+        "total_credits": total_credits,
+        "breakdown": breakdown,
+        "db_details": db_details,
+        "fallback_warnings": fallback_warnings,
+    }
+
+
+def calculate_and_save_sgpa(user_id, sem, cie_data):
+    result = compute_sgpa(cie_data)
+    if result:
+        db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"])
 
 # --- Init ---
 if 'db_initialized' not in st.session_state:
@@ -244,6 +256,8 @@ if 'show_toast' not in st.session_state:
     st.session_state.show_toast = None
 if 'show_dept_prompt' not in st.session_state:
     st.session_state.show_dept_prompt = False
+if 'show_forgot_password' not in st.session_state:
+    st.session_state.show_forgot_password = False
 
 st.set_page_config(page_title="CRCE Companion", page_icon="static/contineo.png", layout="wide")
 st.header("🎓 CRCE Companion Dashboard")
@@ -367,6 +381,9 @@ if not st.session_state.authenticated_user:
         "Password:", type="password", key="sidebar_password_input"
     )
     login_clicked = st.sidebar.button("Login", type="primary", width="stretch")
+    if st.sidebar.button("Forgot password?", width="stretch"):
+        st.session_state.show_forgot_password = True
+        st.rerun()
 else:
     # Already logged in — just read the stored username, no inputs needed
     sidebar_password = ""
@@ -415,6 +432,31 @@ def department_prompt_dialog(username):
 
 if st.session_state.get("show_dept_prompt") and st.session_state.authenticated_user:
     department_prompt_dialog(st.session_state.authenticated_user)
+
+@st.dialog("Reset Password")
+def forgot_password_dialog():
+    st.write("Enter your username and PRN to verify your identity, then set a new password.")
+    fp_username = st.text_input("Username").strip()
+    fp_prn = st.text_input("PRN / Roll No.").strip()
+    fp_new_pw = st.text_input("New Password", type="password")
+    fp_confirm_pw = st.text_input("Confirm New Password", type="password")
+    if st.button("Reset Password", type="primary"):
+        if not all([fp_username, fp_prn, fp_new_pw, fp_confirm_pw]):
+            st.error("All fields are required.")
+        elif fp_new_pw != fp_confirm_pw:
+            st.error("Passwords do not match.")
+        elif len(fp_new_pw) < 6:
+            st.error("Password must be at least 6 characters.")
+        else:
+            ok = db_utils.reset_password_by_prn(fp_username, fp_prn, fp_new_pw)
+            if ok:
+                st.success("Password reset successfully. You can now log in.")
+                st.session_state.show_forgot_password = False
+            else:
+                st.error("Username and PRN do not match. Please check and try again.")
+
+if st.session_state.get("show_forgot_password"):
+    forgot_password_dialog()
 
 # i have commented the below functionality
 # because it was redundant but i have kept it for backward comaptibility
@@ -684,81 +726,19 @@ if st.session_state.student_data_result:
         # SGPA Calculation
         st.markdown(f"### Semester {selected_sem} Performance")
 
-        total_credits = 0
-        weighted_gp = 0
-        breakdown = []
-        db_details = []  # For saving
-
         if marks_data:
-            for sub_code, exams in marks_data.items():
-                sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
+            sgpa_result = compute_sgpa(marks_data)
 
-                # Use hardcoded credit if available, else fallback to name-based logic
-                if sub_code in config.SUBJECT_CODE_TO_CREDITS_MAP:
-                    cred = config.SUBJECT_CODE_TO_CREDITS_MAP[sub_code]
-                else:
-                    st.warning(f"⚠️ Using fallback credit calculation for {sub_name} ({sub_code}).")
-                    if "project" in sub_name.lower():
-                        cred = 3
-                    elif "tools" in sub_name.lower():
-                        cred = 2
-                    elif "lab" in sub_name.lower():
-                        cred = 1
-                    else:
-                        cred = 3
-
-                obt_sum = 0.0
-                max_sum = 0.0
-
-                for ex, val in exams.items():
-                    o = val.get('obtained', 0)
-                    m = val.get('max', 0)
-                    if isinstance(o, (int, float)):
-                        obt_sum += o
-                        max_sum += m if m > 0 else config.get_max_marks(sub_code, ex)
-
-                if max_sum > 0:
-                    perc = (obt_sum / max_sum) * 100
-                    gp = calculate_grade_point(perc)
-
-                    weighted_gp += (cred * gp)
-                    total_credits += cred
-
-                    grade = "F"
-                    if gp == 10:
-                        grade = "O"
-                    elif gp == 9:
-                        grade = "A"
-                    elif gp == 8:
-                        grade = "B"
-                    elif gp == 7:
-                        grade = "C"
-                    elif gp == 6:
-                        grade = "D"
-                    elif gp == 5:
-                        grade = "E"
-                    elif gp == 4:
-                        grade = "P"
-
-                    breakdown.append(f"**{sub_name}**: {perc:.1f}% → {grade} ({gp})")
-                    db_details.append({
-                        "subject_code": sub_code, "subject_name": sub_name,
-                        "percentage": float(f"{perc:.2f}"), "grade_point": gp, "grade_letter": grade, "credits": cred
-                    })
-
-            if total_credits > 0:
-                sgpa = weighted_gp / total_credits
-
-                # Save SGPA if from Live Source
-                if source == "Live Portal":
-                    db_utils.save_student_sgpi_pg(user["id"], selected_sem, sgpa, db_details)
+            if sgpa_result:
+                for warn_sub in sgpa_result["fallback_warnings"]:
+                    st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
 
                 c1, c2 = st.columns([2, 3])
-                c1.metric("SGPA", f"{sgpa:.2f}")
+                c1.metric("SGPA", f"{sgpa_result['sgpa']:.2f}")
                 with c2:
                     with st.expander("Subject Breakdown"):
-                        for b in breakdown: st.markdown(f"- {b}")
-                if st.button(f"Sem {selected_sem} Leaderboard"):
+                        for b in sgpa_result["breakdown"]: st.markdown(f"- {b}")
+                if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
                     user_dept = user.get("department", "NA")
 
                     def render_leaderboard_table(lb, current_user_full_name):
@@ -766,11 +746,10 @@ if st.session_state.student_data_result:
                             st.caption("No leaderboard data.")
                             return
                         RANK_STYLES = {
-                            1: ("#FFD700", "#3d2e00"),
-                            2: ("#C0C0C0", "#2a2a2a"),
-                            3: ("#CD7F32", "#2e1a00"),
+                            1: ("🥇", "#FFD700", "#3d2e00"),
+                            2: ("🥈", "#C0C0C0", "#2a2a2a"),
+                            3: ("🥉", "#CD7F32", "#2e1a00"),
                         }
-                        MEDALS = {1: "1", 2: "2", 3: "3"}
                         rows_html = ""
                         prev_score = None
                         current_rank = 0
@@ -780,10 +759,10 @@ if st.session_state.student_data_result:
                             elif score < prev_score:
                                 current_rank += 1
                             prev_score = score
-                            bg_light, bg_dark = RANK_STYLES.get(current_rank, ("transparent", "transparent"))
+                            medal, bg_light, bg_dark = RANK_STYLES.get(current_rank, ("", "transparent", "transparent"))
                             is_you = name == current_user_full_name
                             you_badge = ' <span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;background:rgba(128,128,128,0.15);font-weight:600;">You</span>' if is_you else ""
-                            rank_cell = str(current_rank)
+                            rank_cell = f"{medal} {current_rank}" if medal else str(current_rank)
                             rows_html += f'<tr style="background:linear-gradient(90deg,{bg_light}18,transparent);font-weight:{"700" if current_rank <= 3 else "400"};"><td style="padding:8px 12px;text-align:center;font-size:0.9rem;opacity:0.6;">{rank_cell}</td><td style="padding:8px 12px;font-size:0.88rem;">{name}{you_badge}</td><td style="padding:8px 12px;text-align:right;font-size:0.9rem;font-variant-numeric:tabular-nums;">{score:.2f}</td></tr>'
                         st.markdown(f"""<style>.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25)}}.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08)}}.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}</style><table class="lb-table"><thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead><tbody>{rows_html}</tbody></table>""", unsafe_allow_html=True)
 
@@ -811,7 +790,7 @@ if st.session_state.student_data_result:
 
         st.divider()
 
-        # --- Attendance & Marks Columns ---
+        # Attendance & Marks Columns
         col1, col2 = st.columns(2)
 
         with col1:
@@ -819,7 +798,6 @@ if st.session_state.student_data_result:
             if att_data:
                 att_display = []
                 for sub, det in att_data.items():
-                    # --- Formatting: Name (Code) ---
                     subject_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub, sub)
                     display_name = f"{subject_name} ({sub})"
 
@@ -846,7 +824,6 @@ if st.session_state.student_data_result:
             st.subheader("Marks")
             if marks_data:
                 for sub, exams in marks_data.items():
-                    # --- Formatting: Name (Code) ---
                     subject_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub, sub)
                     display_name = f"{subject_name} ({sub})"
 
@@ -944,10 +921,10 @@ with st.expander("Report a bug or leave a suggestion", expanded=True):
             elif not fb_msg.strip():
                 st.warning("⚠️ Please write a message.")
             else:
-                # 1. Save to Database (Pass email now)
+                # 1. Save to Database
                 if db_utils.save_feedback_pg(current_user, fb_email, fb_msg, final_rating):
 
-                    # 2. Send Email Notification (Pass email now)
+                    # 2. Send Email Notification
                     send_email_notification(current_user, fb_email, fb_msg, final_rating)
 
                     st.success("Thank you! Your feedback has been recorded. ❤️")
