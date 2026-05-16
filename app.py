@@ -152,18 +152,35 @@ def scrape_fresh_data(user_details, semester_types=None):
 
 
 def calculate_grade_point(percentage):
-    if percentage >= 85.00: return 10
-    if 80.00 <= percentage <= 84.99: return 9
-    if 70.00 <= percentage <= 79.99: return 8
-    if 60.00 <= percentage <= 69.99: return 7
-    if 55.00 <= percentage <= 59.99: return 6
-    if 50.00 <= percentage <= 54.99: return 5
-    if 45.00 <= percentage <= 49.99: return 4
-    return 0
-
+    """Calculate grade point based on official UG grading system."""
+    if percentage >= 85.00:
+        return 10  # O
+    if 80.00 <= percentage <= 84.99:
+        return 9   # A
+    if 70.00 <= percentage <= 79.99:
+        return 8   # B
+    if 60.00 <= percentage <= 69.99:
+        return 7   # C
+    if 50.00 <= percentage <= 59.99:
+        return 6   # D
+    if 45.00 <= percentage <= 49.99:
+        return 5   # E
+    if 40.00 <= percentage <= 44.99:
+        return 4   # P
+    return 0       # F
 
 def _grade_letter(gp):
-    return {10: "O", 9: "A", 8: "B", 7: "C", 6: "D", 5: "E", 4: "P"}.get(gp, "F")
+    """Convert grade point to letter grade."""
+    return {
+        10: "O",
+        9: "A",
+        8: "B",
+        7: "C",
+        6: "D",
+        5: "E",
+        4: "P",
+        0: "F"
+    }.get(gp, "F")
 
 
 def _resolve_credits(sub_code, sub_name):
