@@ -504,7 +504,7 @@ if st.session_state.show_add_user_form:
 
             new_first_name = st.text_input(
                 "App Username (e.g. 'gamer709'):",
-                help="Choose a strong unique username. "
+                help="Choose a unique username. "
                      "This username will be used to log in to CRCE Companion."
             ).strip()
             new_password = st.text_input(
