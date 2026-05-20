@@ -469,7 +469,7 @@ if not st.session_state.authenticated_user:
             <div class="step-num">02</div>
             <div class="step-text">
                 <strong>Log In</strong>
-                <span>Enter your username and password in the sidebar and click <em>Login</em>
+                <span>Enter your username and password in the sidebar and click <em>Login</em>.
             </div>
         </div>
         <div class="step">
@@ -855,6 +855,13 @@ if st.session_state.student_data_result:
     source = pkg["source"]
 
     st.subheader(f"Student: {user['full_name']}")
+    st.markdown(
+        f'<p style="font-size: 1rem; margin-top: -0.5rem; margin-bottom: 0.5rem;">'
+        f'Department: <b>{user.get("department", "NA")}</b><br>'
+        f'Division: <b>{user.get("division", "NA")}</b>'
+        f'</p>',
+        unsafe_allow_html=True
+    )
 
     if data and data.get("scraped_at"):
         ts = data["scraped_at"].astimezone(pytz.timezone('Asia/Kolkata')).strftime('%d-%b %I:%M %p')
