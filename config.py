@@ -4,6 +4,7 @@ NEON_DB_PASSWORD = os.environ.get("NEON_DB_PASSWORD")
 
 if NEON_DB_PASSWORD is None:
     import sys
+
     sys.exit("Database password not configured. Exiting.")
 
 # Construct the connection string using the password
@@ -12,7 +13,6 @@ PG_DBNAME = os.environ.get("PG_DBNAME", "neondb")
 PG_USER = os.environ.get("PG_USER", "neondb_owner")
 
 NEON_CONNECTION_STRING = f"postgresql://{PG_USER}:{NEON_DB_PASSWORD}@{PG_HOST}/{PG_DBNAME}?sslmode=require"
-
 
 # Portal Configuration
 LOGIN_URL_EVEN = "https://crce-students.contineo.in/parents/index.php?option=com_studentdashboard&controller=studentdashboard&task=dashboard"
@@ -28,6 +28,7 @@ def get_login_url(semester_type="even"):
     if semester_type == "odd":
         return LOGIN_URL_ODD
     return LOGIN_URL_EVEN
+
 
 # FORM FIELD NAMES
 PRN_FIELD_NAME = "username"
@@ -219,7 +220,7 @@ SUBJECT_CREDIT_BREAKDOWN = {
     "25PCC11CE04": {"TH": 0, "TU": 0, "PR": 2},
     "25PCC11CE02": {"TH": 0, "TU": 0, "PR": 2},
     "25IKS11CE01": {"TH": 2, "TU": 0, "PR": 0},
-    
+
     # SEM-II
     "25BSC11CE03": {"TH": 2, "TU": 1, "PR": 0},
     "25BSC11CE02": {"TH": 2, "TU": 0, "PR": 1},
@@ -294,6 +295,9 @@ SUBJECT_CREDIT_BREAKDOWN = {
     "25AEC11ME01": {"TH": 1, "TU": 0, "PR": 1},
 }
 
+DEPARTMENTS = ["CE", "CSE", "ECS", "MECH"]
+DIVISIONS = ["A", "B", "C"]
+
 MAX_MARKS_CONFIG = {
     # A. DEFAULTS (Applied if no specific subject rule exists)
     "DEFAULT": {
@@ -307,7 +311,7 @@ MAX_MARKS_CONFIG = {
 
     # B. SUBJECT SPECIFIC OVERRIDES
     # Format: "SUBJECT_CODE": { "EXAM_NAME": MAX_MARKS }
-    
+
     # "CSL701": {         # Example: Machine Learning Lab
     #     "PR-ISE1": 10,  # <--- HERE: You specify this is out of 10
     #     "PR-ISE2": 10   # <--- HERE: You specify this is out of 10
@@ -361,6 +365,7 @@ MAX_MARKS_CONFIG = {
         "PR-ISE2": 50
     },
 }
+
 
 def get_max_marks(subject_code, exam_type):
     """

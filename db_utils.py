@@ -43,6 +43,10 @@ def create_db_and_table_pg():
             ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT DEFAULT 'NA'
         ''')
 
+        cursor.execute('''
+            ALTER TABLE users ADD COLUMN IF NOT EXISTS division TEXT DEFAULT 'NA'
+        ''')
+
         # 2. CIE Marks Table
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS cie_marks (
@@ -98,7 +102,7 @@ def create_db_and_table_pg():
         cursor.close()
         conn.close()
 
-def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, password=None, department="NA"):
+def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, password=None, department="NA", division="NA"):
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
@@ -108,9 +112,9 @@ def add_user_to_db_pg(first_name, full_name, prn, dob_day, dob_month, dob_year, 
             password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
         cursor.execute('''
-            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year, password_hash, department)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year, password_hash, department))
+            INSERT INTO users (first_name, full_name, prn, dob_day, dob_month, dob_year, password_hash, department, division)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ''', (first_name.lower().strip(), full_name.strip().upper(), prn.strip(), dob_day, dob_month, dob_year, password_hash, department, division))
         conn.commit()
         return True
     except psycopg2.IntegrityError:
@@ -197,7 +201,7 @@ def get_user_from_db_pg(first_name_query):
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department, division
             FROM users WHERE first_name = %s
         ''', (first_name_query.lower().strip(),))
         row = cursor.fetchone()
@@ -205,7 +209,8 @@ def get_user_from_db_pg(first_name_query):
             return {
                 "id": row[0], "full_name": row[1], "prn": row[2],
                 "dob_day": row[3], "dob_month": row[4], "dob_year": row[5],
-                "department": row[6] if row[6] else "NA"
+                "department": row[6] if row[6] else "NA",
+                "division": row[7] if row[7] else "NA"
             }
         return None
     finally:
@@ -219,7 +224,7 @@ def get_all_users_from_db_pg():
     cursor = conn.cursor()
     try:
         cursor.execute('''
-            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department
+            SELECT id, full_name, prn, dob_day, dob_month, dob_year, department, division
             FROM users
             ORDER BY id
         ''')
@@ -229,7 +234,8 @@ def get_all_users_from_db_pg():
             users.append({
                 "id": row[0], "full_name": row[1], "prn": row[2],
                 "dob_day": row[3], "dob_month": row[4], "dob_year": row[5],
-                "department": row[6] if row[6] else "NA"
+                "department": row[6] if row[6] else "NA",
+                "division": row[7] if row[7] else "NA"
             })
         return users
     except Exception as e:
@@ -336,7 +342,7 @@ def save_student_sgpi_pg(user_id, semester, sgpi, grade_details, sgpi_separated=
     try:
         json_grades = json.dumps(grade_details) if grade_details else None
         json_grades_sep = json.dumps(grade_details_separated) if grade_details_separated else None
-        
+
         cursor.execute("""
             INSERT INTO student_performance (user_id, semester, sgpi, grade_details, updated_at, sgpi_separated, grade_details_separated)
             VALUES (%s, %s, %s, %s, NOW(), %s, %s)
@@ -468,7 +474,48 @@ def set_user_department(first_name, department):
         conn.close()
 
 
-def get_semester_leaderboard_pg(semester, department=None, limit=10):
+def set_user_division(first_name, division):
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET division = %s WHERE first_name = %s",
+            (division, first_name.lower().strip())
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Set division error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def set_user_division_by_id(user_id, division):
+    """Sets the user's division by user_id. Used during auto-detection from portal."""
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET division = %s WHERE id = %s",
+            (division, user_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    except Exception as e:
+        print(f"Set division by id error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_semester_leaderboard_pg(semester, department=None, division=None, limit=10):
     conn = get_db_connection()
     if not conn: return []
     cursor = conn.cursor()
@@ -476,26 +523,30 @@ def get_semester_leaderboard_pg(semester, department=None, limit=10):
         # COALESCE uses sgpi_separated if available, otherwise falls back to sgpi
         select_clause = "SELECT u.full_name, COALESCE(sp.sgpi_separated, sp.sgpi) as sgpa"
 
+        # Build WHERE conditions dynamically
+        conditions = ["sp.semester = %s", "COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL"]
+        params = [semester]
+
         if department and department != "NA":
-            cursor.execute(f"""
-                {select_clause}
-                FROM student_performance sp
-                JOIN users u ON sp.user_id = u.id
-                WHERE sp.semester = %s AND u.department = %s 
-                AND COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL
-                ORDER BY sgpa DESC
-                LIMIT %s
-            """, (semester, department, limit))
-        else:
-            cursor.execute(f"""
-                {select_clause}
-                FROM student_performance sp
-                JOIN users u ON sp.user_id = u.id
-                WHERE sp.semester = %s 
-                AND COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL
-                ORDER BY sgpa DESC
-                LIMIT %s
-            """, (semester, limit))
+            conditions.append("u.department = %s")
+            params.append(department)
+
+        if division and division != "NA":
+            conditions.append("u.division = %s")
+            params.append(division)
+
+        params.append(limit)
+
+        where_clause = " AND ".join(conditions)
+
+        cursor.execute(f"""
+            {select_clause}
+            FROM student_performance sp
+            JOIN users u ON sp.user_id = u.id
+            WHERE {where_clause}
+            ORDER BY sgpa DESC
+            LIMIT %s
+        """, tuple(params))
 
         return cursor.fetchall()
     except Exception as e:
@@ -514,7 +565,7 @@ def create_feedback_table_pg():
             CREATE TABLE IF NOT EXISTS feedback (
                 id SERIAL PRIMARY KEY,
                 username TEXT,
-                email TEXT,  -- <--- NEW COLUMN
+                email TEXT,
                 message TEXT,
                 rating INTEGER,
                 submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP

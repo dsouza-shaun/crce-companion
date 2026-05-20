@@ -4,6 +4,7 @@ import re
 from urllib.parse import urljoin
 import config
 
+
 def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_name_for_check, login_url=None):
     if login_url is None:
         login_url = config.LOGIN_URL
@@ -18,7 +19,7 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         response_get.raise_for_status()
         soup_login = BeautifulSoup(response_get.content, "html.parser")
         login_form = soup_login.find("form", {"id": "login-form"})
-        
+
         if not login_form: return None, None
 
         # 2. Prepare Payload
@@ -52,7 +53,7 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         # 3. POST Login
         form_action = login_form.get("action")
         actual_post_url = urljoin(login_url, form_action) if form_action else login_url
-        
+
         response_post = session.post(actual_post_url, data=payload, timeout=20)
         response_post.raise_for_status()
         welcome_page_html = response_post.text
@@ -61,7 +62,7 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         # A. Check for explicit FAILURE messages
         # Most portals show these on the login screen if creds are wrong
         failure_keywords = [
-            "invalid prn", "invalid password", "incorrect", 
+            "invalid prn", "invalid password", "incorrect",
             "user not found", "login failed", "try again"
         ]
         if any(fail_msg in lower_html for fail_msg in failure_keywords):
@@ -70,15 +71,15 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         # B. Check for explicit SUCCESS indicators
         # We look for elements that ONLY exist on the Dashboard, not the Login page.
         soup_dash = BeautifulSoup(welcome_page_html, "html.parser")
-        
+
         # 1. Name Match
         name_matched = user_full_name_for_check.lower() in lower_html if user_full_name_for_check else False
-        
+
         # 2. Dashboard Specifics (e.g., "Course", "Semester", specific IDs)
         # "cie-table" or "attendance" are good indicators of the student portal
         has_dashboard_elements = (
-            "course" in lower_html and 
-            ("attendance" in lower_html or "semester" in lower_html)
+                "course" in lower_html and
+                ("attendance" in lower_html or "semester" in lower_html)
         )
 
         # 3. Strict "Logout" Link Check (Must be an actual link, not just text)
@@ -95,11 +96,12 @@ def login_and_get_welcome_page(prn, dob_day, dob_month_val, dob_year, user_full_
         print(f"Scraper Error: {e}")
         return None, None
 
+
 def extract_attendance_from_welcome_page(welcome_page_html):
     if not welcome_page_html: return []
     soup = BeautifulSoup(welcome_page_html, "html.parser")
     attendance_data = []
-    
+
     scripts = soup.find_all("script")
     for script in scripts:
         if script.string and "gaugeTypeMulti" in script.string:
@@ -114,6 +116,7 @@ def extract_attendance_from_welcome_page(welcome_page_html):
                     })
                 return attendance_data
     return []
+
 
 def get_cie_detail_urls(dashboard_html):
     soup = BeautifulSoup(dashboard_html, "html.parser")
@@ -142,6 +145,7 @@ def get_cie_detail_urls(dashboard_html):
                         subject_urls[subject_code] = url
     return subject_urls
 
+
 def _parse_table_marks_safely(soup):
     """
     Helper: Extracts marks from the HTML Table using strict index alignment.
@@ -158,15 +162,15 @@ def _parse_table_marks_safely(soup):
             body_row = tbody.find("tr")
             if body_row:
                 body_cells = body_row.find_all("td")
-                
+
                 # Iterate by index to keep alignment correct
                 limit = min(len(header_cells), len(body_cells))
                 for i in range(limit):
                     header_text = header_cells[i].get_text(strip=True)
                     cell_text = body_cells[i].get_text(strip=True)
-                    
+
                     if not header_text or header_text in ["Attendance", "Eligibility", "Final IA"]: continue
-                    
+
                     # Only accept if format is "Obtained/Max" (e.g., "18/20" or "0/20")
                     if "/" in cell_text:
                         try:
@@ -175,8 +179,10 @@ def _parse_table_marks_safely(soup):
                                 "obtained": float(parts[0]),
                                 "max": float(parts[1])
                             }
-                        except: pass
+                        except:
+                            pass
     return table_marks
+
 
 def scrape_subject_detail_page(session, url, base_url=None):
     if base_url is None:
@@ -186,25 +192,27 @@ def scrape_subject_detail_page(session, url, base_url=None):
         response = session.get(full_url, timeout=15)
         html = response.text
         soup = BeautifulSoup(html, "html.parser")
-        
+
         final_marks_data = {}
-        
+
         # 1. Parse Table Data (Source of Truth for "Is exam taken?")
         table_data = _parse_table_marks_safely(soup)
 
         # 2. Parse Chart Data (Source of Truth for "Correct Column Mapping")
         chart_match = re.search(r'var\s+chartData\s*=\s*(\[\{.*?}]);', html, re.DOTALL)
-        
+
         if chart_match:
             json_str = chart_match.group(1)
             # Extract: { "xaxis": "ExamName", "maxmarks": 20, "optainmarks": 15.5 }
-            objects = re.findall(r'\{[^{}]*?"xaxis"\s*:\s*"([^"]+)"[^{}]*?"maxmarks"\s*:\s*([\d.]+)[^{}]*?"optainmarks"\s*:\s*([\d.]+)[^{}]*?}', json_str, re.DOTALL)
-            
+            objects = re.findall(
+                r'\{[^{}]*?"xaxis"\s*:\s*"([^"]+)"[^{}]*?"maxmarks"\s*:\s*([\d.]+)[^{}]*?"optainmarks"\s*:\s*([\d.]+)[^{}]*?}',
+                json_str, re.DOTALL)
+
             for exam_name, max_val, obt_val in objects:
                 try:
                     obt = float(obt_val)
                     max_m = float(max_val)
-                    
+
                     # --- HYBRID VALIDATION ---
                     if obt == 0:
                         # If Chart says 0, verify with Table.
@@ -220,7 +228,7 @@ def scrape_subject_detail_page(session, url, base_url=None):
                         final_marks_data[exam_name] = {"obtained": obt, "max": max_m}
                 except ValueError:
                     pass
-            
+
             if final_marks_data:
                 return final_marks_data
 
@@ -231,17 +239,19 @@ def scrape_subject_detail_page(session, url, base_url=None):
         print(f"Error scraping detail page {url}: {e}")
         return {}
 
+
 def extract_cie_marks(session, html_content=None, base_url=None):
     if not isinstance(session, requests.Session): return {}
     all_subjects_data = {}
     subject_links = get_cie_detail_urls(html_content)
-    
+
     for subject, url in subject_links.items():
         subject = subject.strip()
         marks = scrape_subject_detail_page(session, url, base_url=base_url)
         if marks:
             all_subjects_data[subject] = marks
     return all_subjects_data
+
 
 def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
     """
@@ -253,7 +263,7 @@ def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
 
     soup = BeautifulSoup(welcome_page_html, "html.parser")
     detailed_data = {}
-    
+
     links = soup.find_all("a", href=True)
     for link in links:
         if "task=attendencelist" in link['href']:
@@ -266,17 +276,17 @@ def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
                         full_url = urljoin(base_url, link['href'])
                         resp = session.get(full_url, timeout=10)
                         det_soup = BeautifulSoup(resp.content, "html.parser")
-                        
+
                         green_span = det_soup.find("span", class_="cn-color-green")
                         red_span = det_soup.find("span", class_="cn-color-red")
-                        
+
                         present = 0
                         absent = 0
-                        
+
                         if green_span:
                             m = re.search(r"\[(\d+)]", green_span.get_text())
                             if m: present = int(m.group(1))
-                        
+
                         if red_span:
                             m = re.search(r"\[(\d+)]", red_span.get_text())
                             if m: absent = int(m.group(1))
@@ -289,8 +299,54 @@ def extract_detailed_attendance_info(session, welcome_page_html, base_url=None):
                         pass
     return detailed_data
 
+
 def extract_student_semester(html_content):
     if not html_content: return None
     soup = BeautifulSoup(html_content, "html.parser")
     match = re.search(r"SEM\s+(\d+)", soup.get_text(), re.IGNORECASE)
     return int(match.group(1)) if match else None
+
+
+def extract_student_division(html_content):
+    """
+    Extracts the student's division from the Contineo portal dashboard HTML.
+    The portal shows text like: "B.Tech-CE,  SEM 02,  CE-B"
+    The division is the single letter after the hyphen in the DEPT-DIV pattern (e.g., "B" from "CE-B").
+    Returns the division letter (e.g., "A", "B") or None if not found.
+    """
+    if not html_content:
+        return None
+    soup = BeautifulSoup(html_content, "html.parser")
+
+    # Strategy 1: Look for the <p> tag inside the cn-stu-data1 div (the student header section)
+    header_div = soup.find("div", class_="cn-stu-data1")
+    if header_div:
+        p_tag = header_div.find("p")
+        if p_tag:
+            text = p_tag.get_text(strip=True)
+            # Match pattern: DEPT-DIV where DEPT is 2-4 uppercase letters and DIV is a single uppercase letter
+            # e.g., "CE-B", "CSE-A", "MECH-C", "ECS-D"
+            # This won't match "B.Tech-CE" because "B.Tech" has a period and doesn't match [A-Z]{2,4}
+            match = re.search(r'\b([A-Z]{2,4})-([A-Z])\b', text)
+            if match:
+                return match.group(2)
+
+    # Strategy 2: Fallback — search all <p> tags inside cn-student-header divs
+    student_headers = soup.find_all("div", class_="cn-student-header")
+    for header in student_headers:
+        p_tags = header.find_all("p")
+        for p in p_tags:
+            text = p.get_text(strip=True)
+            match = re.search(r'\b([A-Z]{2,4})-([A-Z])\b', text)
+            if match:
+                return match.group(2)
+
+    # Strategy 3: Last resort — search the full page text for the pattern
+    full_text = soup.get_text()
+    # Find ALL matches and take the last one (the DEPT-DIV comes after "B.Tech-DEPT" in the text)
+    all_matches = re.findall(r'\b([A-Z]{2,4})-([A-Z])\b', full_text)
+    if all_matches:
+        # The last match is most likely the division indicator (e.g., "CE-B" appears after "B.Tech-CE")
+        return all_matches[-1][1]
+
+    return None

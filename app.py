@@ -22,7 +22,9 @@ except Exception:
 
 def get_item(key): return _localS.getItem(key)
 
+
 def set_item(key, value): _localS.setItem(key, value)
+
 
 load_dotenv()
 import config
@@ -31,6 +33,7 @@ import web_scraper
 
 # For emails
 import resend
+
 
 def send_email_notification(user, user_email, message, rating):
     api_key = os.getenv("RESEND_API_KEY")
@@ -114,6 +117,16 @@ def scrape_fresh_data(user_details, semester_types=None):
             print(f"Login failed for {portal_label} semester portal.")
             continue
 
+        # 1b. Auto-detect division from portal (only if not already set)
+        user_division = user_details.get("division", "NA")
+        if not user_division or user_division == "NA":
+            detected_div = web_scraper.extract_student_division(html)
+            if detected_div:
+                # Use the user_id to update division (more reliable than first_name lookup)
+                db_utils.set_user_division_by_id(user_details["id"], detected_div)
+                user_details["division"] = detected_div
+                print(f"Auto-detected and saved division: {detected_div} for user_id {user_details['id']}")
+
         # 2. Extract the Default Semester from the Dashboard
         dashboard_sem = web_scraper.extract_student_semester(html)
         if not dashboard_sem:
@@ -156,18 +169,19 @@ def calculate_grade_point(percentage):
     if percentage >= 85.00:
         return 10  # O
     if 80.00 <= percentage <= 84.99:
-        return 9   # A
+        return 9  # A
     if 70.00 <= percentage <= 79.99:
-        return 8   # B
+        return 8  # B
     if 60.00 <= percentage <= 69.99:
-        return 7   # C
+        return 7  # C
     if 50.00 <= percentage <= 59.99:
-        return 6   # D
+        return 6  # D
     if 45.00 <= percentage <= 49.99:
-        return 5   # E
+        return 5  # E
     if 40.00 <= percentage <= 44.99:
-        return 4   # P
-    return 0       # F
+        return 4  # P
+    return 0  # F
+
 
 def _grade_letter(gp):
     """Convert grade point to letter grade."""
@@ -262,14 +276,14 @@ def compute_sgpa_separated(cie_data):
 
     for sub_code, exams in cie_data.items():
         sub_name = config.SUBJECT_CODE_TO_NAME_MAP.get(sub_code, sub_code)
-        
+
         has_separated_logic = sub_code in config.SUBJECT_CREDIT_BREAKDOWN
         if not has_separated_logic:
             # fallback to normal logic if missing from separated map
             cred, is_fallback = _resolve_credits(sub_code, sub_name)
             if is_fallback:
                 fallback_warnings.append(f"{sub_name} ({sub_code})")
-            
+
             obt_sum = 0.0
             max_sum = 0.0
             for ex, val in exams.items():
@@ -293,16 +307,16 @@ def compute_sgpa_separated(cie_data):
                     "grade_letter": grade, "credits": cred
                 })
             continue
-            
+
         credits_map = config.SUBJECT_CREDIT_BREAKDOWN[sub_code]
         components = {"TH": {"obt": 0.0, "max": 0.0}, "PR": {"obt": 0.0, "max": 0.0}, "TU": {"obt": 0.0, "max": 0.0}}
-        
+
         for ex, val in exams.items():
             o = val.get('obtained', 0)
             m = val.get('max', 0)
             if isinstance(o, (int, float)):
                 m_actual = m if m > 0 else config.get_max_marks(sub_code, ex)
-                
+
                 # Determine bucket
                 if "PR-" in ex:
                     comp = "PR"
@@ -310,10 +324,10 @@ def compute_sgpa_separated(cie_data):
                     comp = "TU"
                 else:
                     comp = "TH"
-                    
+
                 components[comp]["obt"] += o
                 components[comp]["max"] += m_actual
-                
+
         for comp in ["TH", "PR", "TU"]:
             cred = credits_map.get(comp, 0)
             c_max = components[comp]["max"]
@@ -324,7 +338,7 @@ def compute_sgpa_separated(cie_data):
                 grade = _grade_letter(gp)
                 weighted_gp += cred * gp
                 total_credits += cred
-                
+
                 comp_label = "Theory" if comp == "TH" else "Practical" if comp == "PR" else "Tutorial"
                 breakdown.append(f"**{sub_name}** ({comp_label}): {perc:.1f}% → {grade} ({gp})")
                 db_details.append({
@@ -353,6 +367,7 @@ def calculate_and_save_sgpa(user_id, sem, cie_data):
         sgpa_sep = result_sep["sgpa"] if result_sep else None
         details_sep = result_sep["db_details"] if result_sep else None
         db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"], sgpa_sep, details_sep)
+
 
 # --- Init ---
 if 'db_initialized' not in st.session_state:
@@ -447,14 +462,14 @@ if not st.session_state.authenticated_user:
             <div class="step-num">01</div>
             <div class="step-text">
                 <strong>Register</strong>
-                <span>Click <em>Register New Student</em> in the sidebar. Choose a username and password, then enter your PRN and date of birth exactly as they appear on the Contineo portal.</span>
+                <span>Click <em>Register New Student</em> in the sidebar if you haven't registered yet. Choose a username and password, then enter your PRN and date of birth exactly as they appear on the Contineo portal.</span>
             </div>
         </div>
         <div class="step">
             <div class="step-num">02</div>
             <div class="step-text">
                 <strong>Log In</strong>
-                <span>Enter your username and password in the sidebar and click <em>Login</em>. You only need to do this once per session.</span>
+                <span>Enter your username and password in the sidebar and click <em>Login</em>
             </div>
         </div>
         <div class="step">
@@ -535,19 +550,25 @@ if st.session_state.get("show_toast"):
     st.toast(st.session_state.show_toast[1])
     st.session_state.show_toast = None
 
-DEPARTMENTS = ["CE", "CSE", "ECS", "MECH"]
+DEPARTMENTS = config.DEPARTMENTS
+DIVISIONS = config.DIVISIONS
 
-@st.dialog("Select Your Department")
+
+@st.dialog("Select Your Department & Division")
 def department_prompt_dialog(username):
-    st.write("Your department has not been set. Please choose your department to continue.")
+    st.write("Your department has not been set. Please choose your department and division to continue.")
     chosen_dept = st.selectbox("Department", DEPARTMENTS)
+    chosen_div = st.selectbox("Division", DIVISIONS)
     if st.button("Save", type="primary"):
         db_utils.set_user_department(username, chosen_dept)
+        db_utils.set_user_division(username, chosen_div)
         st.session_state.show_dept_prompt = False
         st.rerun()
 
+
 if st.session_state.get("show_dept_prompt") and st.session_state.authenticated_user:
     department_prompt_dialog(st.session_state.authenticated_user)
+
 
 @st.dialog("Reset Password")
 def forgot_password_dialog():
@@ -570,6 +591,7 @@ def forgot_password_dialog():
                 st.session_state.show_forgot_password = False
             else:
                 st.error("Username and PRN do not match. Please check and try again.")
+
 
 if st.session_state.get("show_forgot_password"):
     forgot_password_dialog()
@@ -664,11 +686,18 @@ if st.session_state.show_add_user_form:
                 help="Select your department."
             )
 
+            new_division = st.selectbox(
+                "Division:",
+                options=config.DIVISIONS,
+                help="Select your division"
+            )
+
             submitted_add_user = st.form_submit_button("Validate & Save Student")
 
             if submitted_add_user:
                 # 1. Local Validation: Check for empty fields
-                if not all([new_first_name, new_password, new_password_confirm, new_full_name, new_prn, new_dob_day, new_dob_month, new_dob_year]):
+                if not all([new_first_name, new_password, new_password_confirm, new_full_name, new_prn, new_dob_day,
+                            new_dob_month, new_dob_year]):
                     st.error("❌ All fields are required.")
                 elif new_password != new_password_confirm:
                     st.error("❌ Passwords do not match.")
@@ -679,7 +708,8 @@ if st.session_state.show_add_user_form:
                     with st.spinner("Attempting login to Contineo Portal..."):
                         try:
                             # Use the currently selected semester portal for validation
-                            validation_login_url = config.get_login_url(selected_sem_type if selected_sem_type != "both" else "even")
+                            validation_login_url = config.get_login_url(
+                                selected_sem_type if selected_sem_type != "both" else "even")
                             session, validation_html = web_scraper.login_and_get_welcome_page(
                                 new_prn,
                                 new_dob_day,
@@ -696,6 +726,12 @@ if st.session_state.show_add_user_form:
                     if validation_html:
                         st.success("Credentials Validated Successfully!\nPlease Wait...")
 
+                        # 3b. Auto-detect division from portal HTML
+                        detected_division = web_scraper.extract_student_division(validation_html)
+                        final_division = detected_division if detected_division else new_division
+                        # if detected_division:
+                        #     st.info(f"Auto-detected division: {detected_division}")
+
                         # 4. Save to Database (Only happens if validation passed)
                         save_success = db_utils.add_user_to_db_pg(
                             new_first_name,
@@ -705,7 +741,8 @@ if st.session_state.show_add_user_form:
                             new_dob_month,
                             new_dob_year,
                             password=new_password,
-                            department=new_department
+                            department=new_department,
+                            division=final_division
                         )
 
                         if save_success:
@@ -727,8 +764,8 @@ if st.session_state.show_add_user_form:
                         """)
 # Fetch Logic — only allowed when authenticated
 should_fetch = (
-    is_authenticated and
-    (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
+        is_authenticated and
+        (fetch_button or force_refresh_button or (first_name_input and not st.session_state.student_data_result))
 )
 
 if not is_authenticated and (fetch_button or force_refresh_button) and first_name_input:
@@ -876,6 +913,8 @@ if st.session_state.student_data_result:
 
                 if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
                     user_dept = user.get("department", "NA")
+                    user_div = user.get("division", "NA")
+
 
                     def render_leaderboard_table(lb, current_user_full_name):
                         if not lb:
@@ -900,25 +939,40 @@ if st.session_state.student_data_result:
                             you_badge = ' <span style="font-size:0.7rem;padding:1px 6px;border-radius:4px;background:rgba(128,128,128,0.15);font-weight:600;">You</span>' if is_you else ""
                             rank_cell = f"{medal} {current_rank}" if medal else str(current_rank)
                             rows_html += f'<tr style="background:linear-gradient(90deg,{bg_light}18,transparent);font-weight:{"700" if current_rank <= 3 else "400"};"><td style="padding:8px 12px;text-align:center;font-size:0.9rem;opacity:0.6;">{rank_cell}</td><td style="padding:8px 12px;font-size:0.88rem;">{name}{you_badge}</td><td style="padding:8px 12px;text-align:right;font-size:0.9rem;font-variant-numeric:tabular-nums;">{score:.2f}</td></tr>'
-                        st.markdown(f"""<style>.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25)}}.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08)}}.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}</style><table class="lb-table"><thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead><tbody>{rows_html}</tbody></table>""", unsafe_allow_html=True)
+                        st.markdown(
+                            f"""<style>.lb-table{{width:100%;border-collapse:collapse;margin-top:8px;}}.lb-table thead tr{{border-bottom:1px solid rgba(128,128,128,0.25)}}.lb-table th{{padding:6px 12px;font-size:0.75rem;opacity:0.5;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;}}.lb-table th:last-child,.lb-table td:last-child{{text-align:right;}}.lb-table tbody tr{{border-bottom:1px solid rgba(128,128,128,0.08)}}.lb-table tbody tr:hover{{background:rgba(128,128,128,0.05)!important;}}</style><table class="lb-table"><thead><tr><th>#</th><th>Student</th><th>SGPA</th></tr></thead><tbody>{rows_html}</tbody></table>""",
+                            unsafe_allow_html=True)
 
-                    tabs_to_show = ["Grand Leaderboard"]
-                    if user_dept and user_dept != "NA":
-                        tabs_to_show = [f"{user_dept} Leaderboard", "Grand Leaderboard"]
+
+                    # Build leaderboard tabs: Division -> Department -> Grand
+                    tabs_to_show = ["Grand Leaderboard "]
+                    if user_dept and user_dept != "NA ":
+                        tabs_to_show = [f"{user_dept} Leaderboard ", "Grand Leaderboard "]
+
+                    # Only show division-wise leaderboard for departments with multiple divisions (CE, CSE)
+                    # ECS and MECH only have Division A, so skip division tab for them.
+                    if user_div and user_div != "NA " and user_dept and user_dept != "NA " and user_dept not in ["ECS ", "MECH "]:
+                        tabs_to_show = [f"{user_dept}-{user_div} Leaderboard "] + tabs_to_show
 
                     lb_tabs = st.tabs(tabs_to_show)
 
+                    tab_idx = 0
+                    if user_div and user_div != "NA" and user_dept and user_dept != "NA":
+                        with lb_tabs[tab_idx]:
+                            div_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept,
+                                                                          division=user_div)
+                            render_leaderboard_table(div_lb, user["full_name"])
+                        tab_idx += 1
+
                     if user_dept and user_dept != "NA":
-                        with lb_tabs[0]:
+                        with lb_tabs[tab_idx]:
                             dept_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept)
                             render_leaderboard_table(dept_lb, user["full_name"])
-                        with lb_tabs[1]:
-                            grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
-                            render_leaderboard_table(grand_lb, user["full_name"])
-                    else:
-                        with lb_tabs[0]:
-                            grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
-                            render_leaderboard_table(grand_lb, user["full_name"])
+                        tab_idx += 1
+
+                    with lb_tabs[tab_idx]:
+                        grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
+                        render_leaderboard_table(grand_lb, user["full_name"])
             else:
                 st.info("Could not calculate SGPA: Total credits are zero.")
         else:
