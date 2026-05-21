@@ -17,6 +17,7 @@
     ├── config.py               # Portal URLs, subject mapping, DB config
     ├── db_utils.py             # PostgreSQL database operations
     ├── LICENSE
+    ├── migrate.py
     ├── PROJECT_STRUCTURE.md
     ├── pyproject.toml          # Project metadata & dependencies (uv)
     ├── README.md

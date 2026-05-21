@@ -361,11 +361,6 @@ def calculate_and_save_sgpa(user_id, sem, cie_data):
         db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"], sgpa_sep, details_sep)
 
 
-if 'db_initialized' not in st.session_state:
-    db_utils.create_db_and_table_pg()
-    db_utils.create_feedback_table_pg()
-    st.session_state.db_initialized = True
-
 if 'first_name' not in st.session_state:
     st.session_state.first_name = get_item(key="last_username") or ""
 if 'show_add_user_form' not in st.session_state:
