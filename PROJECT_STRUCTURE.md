@@ -1,10 +1,15 @@
 ```
 └── 📁crce-companion
     └── 📁.streamlit
-        ├── config.toml
+        └── config.toml
+    └── 📁assets
+        ├── logo.png
+        ├── mockup-1.png
+        ├── mockup-2.png
+        └── mockup-3.png
     └── 📁static                # PWA assets (icons, manifest)
         ├── contineo.png
-        ├── manifest.json
+        └── manifest.json
     ├── .env                    # Environment variables
     ├── .gitignore
     ├── app.py                  # Streamlit dashboard (main entry point)

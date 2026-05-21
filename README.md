@@ -7,6 +7,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 ![uv](https://img.shields.io/badge/uv-managed-7C3AED?style=for-the-badge&logo=uv&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+![GitHub Stars](https://img.shields.io/github/stars/dsouza-shaun/crce-companion?style=for-the-badge&logo=github&color=yellow)
 
 **A modern, fast, and insightful dashboard for CRCE Contineo student portal data.**
 
@@ -27,34 +28,37 @@ The official Contineo student portal is tedious to use every day:
 
 ## Features
 
-- **One-Time Registration** — Save your PRN and DOB once, linked to a username and password of your choice. Your credentials are validated against the live portal before saving. Passwords are securely hashed using bcrypt.
-- **Department Selection** — Choose your department (CE, CSE, ECS, or MECH) during registration for department-specific leaderboards and comparisons.
-- **Odd & Even Semester Support** — Automatically scrapes data from both the odd and even semester portals, so all your data is available in one place.
-- **Smart Attendance Tracker**
-  - Displays current attendance percentage for every subject.
-  - Calculates exactly how many lectures you can **miss** while staying above 75%.
-  - Tells you how many lectures you must **attend** to get back to 75% if you're below.
-- **Detailed CIE Marks** — Clean breakdown of marks for MSE, ISE, ESE, and lab exams with per-subject totals and configurable max marks per exam type.
-- **Advanced SGPA Calculation**
-  - Automatically computes your Semester Grade Point Average with a subject-wise grade breakdown.
-  - **Separated SGPA** — Calculates SGPA with Theory, Practical, and Tutorial components separately for accurate grading.
-- **Semester Leaderboards** — See how you rank against your classmates for any semester, with optional department filtering.
-- **Password Management**
-  - Secure password-based login with bcrypt hashing.
-  - **Forgot Password** — Reset your password by verifying your username and PRN.
-- **Feedback System** — Submit feedback with ratings and optional email. Notifications are sent via Resend for developer follow-up.
-- **Live Data & Caching**
-  - **Fetch Data** — Retrieves cached data from the database (instant).
-  - **Get Live Data** — Scrapes the portal for the most up-to-the-minute information.
-  - **Auto-Refresh** — Automatically fetches live data if cached data is older than 1 day.
-  - **Smart Fallback** — If live scraping fails, automatically falls back to cached data.
-- **Progressive Web App (PWA)** — Install the app on your mobile device for a native-like experience.
+## Features
+
+- **One-Time Registration** — Save your PRN & DOB once with secure bcrypt-based authentication.
+- **Unified Dashboard** — Access odd and even semester data in one place.
+- **Smart Attendance Insights** — Know how many lectures you can miss or need to attend to maintain 75%.
+- **Detailed Marks & SGPA**
+  - Component-wise SGPA calculation
+  - Theory, practical, and tutorial separation
+  - MSE / ISE / ESE / lab breakdowns
+- **Advanced Leaderboards**
+  - Grand leaderboard, Department-wise rankings, Division-wise rankings
+  - Personal rank visibility
+- **Live Data + Caching**
+  - Instant cached fetch
+  - One-click live scraping
+  - Auto-refresh stale data after 1 day
+  - Smart fallback on scraping failure
+- **Account Utilities**
+  - Forgot password support
+  - Secure login system
+- **Student Details Display** — Shows department and division below student names.
+- **Feedback System** — Built-in feedback and rating support via Resend.
+- **PWA Support** — Installable mobile-friendly app experience.
 
 ## Demo
 
 ![Streamlit App Mockup 1](assets/mockup-1.png)
 
 ![Streamlit App Mockup 2](assets/mockup-2.png)
+
+![Streamlit App Mockup 3](assets/mockup-3.png)
 
 ## Tech Stack
 
