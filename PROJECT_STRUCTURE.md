@@ -8,6 +8,7 @@
     ├── .env                    # Environment variables
     ├── .gitignore
     ├── app.py                  # Streamlit dashboard (main entry point)
+    ├── batch_update.py         # Batch update script
     ├── config.py               # Portal URLs, subject mapping, DB config
     ├── db_utils.py             # PostgreSQL database operations
     ├── LICENSE

@@ -31,7 +31,6 @@ import config
 import db_utils
 import web_scraper
 
-# For emails
 import resend
 
 
@@ -186,14 +185,7 @@ def calculate_grade_point(percentage):
 def _grade_letter(gp):
     """Convert grade point to letter grade."""
     return {
-        10: "O",
-        9: "A",
-        8: "B",
-        7: "C",
-        6: "D",
-        5: "E",
-        4: "P",
-        0: "F"
+        10: "O", 9: "A", 8: "B", 7: "C", 6: "D", 5: "E", 4: "P", 0: "F"
     }.get(gp, "F")
 
 
@@ -369,7 +361,6 @@ def calculate_and_save_sgpa(user_id, sem, cie_data):
         db_utils.save_student_sgpi_pg(user_id, sem, result["sgpa"], result["db_details"], sgpa_sep, details_sep)
 
 
-# --- Init ---
 if 'db_initialized' not in st.session_state:
     db_utils.create_db_and_table_pg()
     db_utils.create_feedback_table_pg()
@@ -963,9 +954,22 @@ if st.session_state.student_data_result:
 
                     lb_tabs = st.tabs(tabs_to_show)
 
+                    def show_rank_banner(sem, full_name, department=None, division=None):
+                        rank_info = db_utils.get_student_rank_pg(sem, full_name, department=department, division=division)
+                        if rank_info:
+                            st.markdown(
+                                f'<div style="width:100%;box-sizing:border-box;margin-bottom:14px;padding:12px 16px;border-radius:10px;'
+                                f'background:rgba(128,128,128,0.08);border:1px solid rgba(128,128,128,0.15);text-align:center;">'
+                                f'<span style="font-size:0.75rem;opacity:0.55;letter-spacing:0.06em;text-transform:uppercase;font-weight:600;">Your Rank</span><br>'
+                                f'<span style="font-size:1.6rem;font-weight:700;line-height:1.3;">#{rank_info["rank"]}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+
                     tab_idx = 0
                     if user_div and user_div != "NA" and user_dept and user_dept != "NA":
                         with lb_tabs[tab_idx]:
+                            show_rank_banner(selected_sem, user["full_name"], department=user_dept, division=user_div)
                             div_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept,
                                                                           division=user_div)
                             render_leaderboard_table(div_lb, user["full_name"])
@@ -973,11 +977,13 @@ if st.session_state.student_data_result:
 
                     if user_dept and user_dept != "NA":
                         with lb_tabs[tab_idx]:
+                            show_rank_banner(selected_sem, user["full_name"], department=user_dept)
                             dept_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept)
                             render_leaderboard_table(dept_lb, user["full_name"])
                         tab_idx += 1
 
                     with lb_tabs[tab_idx]:
+                        show_rank_banner(selected_sem, user["full_name"])
                         grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
                         render_leaderboard_table(grand_lb, user["full_name"])
             else:

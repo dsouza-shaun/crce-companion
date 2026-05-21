@@ -556,6 +556,47 @@ def get_semester_leaderboard_pg(semester, department=None, division=None, limit=
         cursor.close()
         conn.close()
 
+def get_student_rank_pg(semester, full_name, department=None, division=None):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor()
+    try:
+        conditions = ["sp.semester = %s", "COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL"]
+        params = [semester]
+
+        if department and department != "NA":
+            conditions.append("u.department = %s")
+            params.append(department)
+
+        if division and division != "NA":
+            conditions.append("u.division = %s")
+            params.append(division)
+
+        where_clause = " AND ".join(conditions)
+
+        cursor.execute(f"""
+            SELECT rank, full_name, sgpa FROM (
+                SELECT
+                    u.full_name,
+                    COALESCE(sp.sgpi_separated, sp.sgpi) AS sgpa,
+                    RANK() OVER (ORDER BY COALESCE(sp.sgpi_separated, sp.sgpi) DESC) AS rank
+                FROM student_performance sp
+                JOIN users u ON sp.user_id = u.id
+                WHERE {where_clause}
+            ) ranked
+            WHERE full_name = %s
+        """, tuple(params) + (full_name,))
+
+        row = cursor.fetchone()
+        return {"rank": row[0], "sgpa": row[2]} if row else None
+    except Exception as e:
+        print(f"Error fetching student rank: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+
 def create_feedback_table_pg():
     conn = get_db_connection()
     if conn:
