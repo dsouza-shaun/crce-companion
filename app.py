@@ -523,8 +523,7 @@ if login_clicked and first_name_input:
         if pw_ok:
             st.session_state.authenticated_user = first_name_input
             st.session_state.student_data_result = None
-            fetched_user = db_utils.get_user_from_db_pg(first_name_input)
-            if fetched_user and fetched_user.get("department", "NA") == "NA":
+            if lookup.get("department", "NA") == "NA":
                 st.session_state.show_dept_prompt = True
             if not db_utils.user_has_password(first_name_input):
                 st.session_state.show_toast = ("warning", "⚠️ Account has no password set. Please re-register.")
@@ -806,7 +805,6 @@ if should_fetch and first_name_input:
 
             if scrape_res:
                 result = scrape_res
-                # Save to DB (Marks, Attendance & SGPA)
                 for sem, data in result["semesters_data"].items():
                     db_utils.update_student_marks_in_db_pg(
                         user_details["id"], sem, data['cie'], result["scraped_at"]
@@ -817,9 +815,7 @@ if should_fetch and first_name_input:
                     if data.get('cie'):
                         calculate_and_save_sgpa(user_details["id"], sem, data['cie'])
 
-                    # Add latest_sem logic for display
-                    latest = max(result["semesters_data"].keys()) if result["semesters_data"] else None
-                    result["latest_sem"] = latest
+                result["latest_sem"] = max(result["semesters_data"].keys()) if result["semesters_data"] else None
             else:
                 # FALLBACK: If live fetch fails, revert to cached data
                 if cached_result:
@@ -944,12 +940,10 @@ if st.session_state.student_data_result:
 
                     # Build leaderboard tabs: Division -> Department -> Grand
                     tabs_to_show = ["Grand Leaderboard "]
-                    if user_dept and user_dept != "NA ":
+                    if user_dept and user_dept != "NA":
                         tabs_to_show = [f"{user_dept} Leaderboard ", "Grand Leaderboard "]
 
-                    # Only show division-wise leaderboard for departments with multiple divisions (CE, CSE)
-                    # ECS and MECH only have Division A, so skip division tab for them.
-                    if user_div and user_div != "NA " and user_dept and user_dept != "NA " and user_dept not in ["ECS ", "MECH "]:
+                    if user_div and user_div != "NA" and user_dept and user_dept != "NA" and user_dept not in ["ECS", "MECH"]:
                         tabs_to_show = [f"{user_dept}-{user_div} Leaderboard "] + tabs_to_show
 
                     lb_tabs = st.tabs(tabs_to_show)

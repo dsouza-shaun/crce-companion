@@ -36,10 +36,6 @@ def create_db_and_table_pg():
         ''')
 
         cursor.execute('''
-            ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT
-        ''')
-
-        cursor.execute('''
             ALTER TABLE users ADD COLUMN IF NOT EXISTS department TEXT DEFAULT 'NA'
         ''')
 
@@ -358,6 +354,7 @@ def save_student_sgpi_pg(user_id, semester, sgpi, grade_details, sgpi_separated=
         return True
     except Exception as e:
         print(f"Error saving SGPI: {e}")
+        conn.rollback()
         return False
     finally:
         cursor.close()
@@ -376,14 +373,19 @@ def get_student_data_from_db(user_id):
 
     try:
         # 1. Fetch Marks
-        cursor.execute("SELECT semester, subject_code, exam_type, marks, max_marks, scraped_at FROM cie_marks WHERE user_id = %s", (user_id,))
+        cursor.execute("""
+            SELECT semester, subject_code, exam_type, marks, max_marks, scraped_at
+            FROM cie_marks WHERE user_id = %s
+            ORDER BY scraped_at DESC
+        """, (user_id,))
         mark_rows = cursor.fetchall()
 
         last_scraped = None
 
         for r in mark_rows:
             sem, sub, exam, obt, mx, ts = r
-            last_scraped = ts # Just take the last one
+            if last_scraped is None:
+                last_scraped = ts
 
             if sem not in full_data: full_data[sem] = {'cie': {}, 'att': {}, 'sgpi': None}
             if sub not in full_data[sem]['cie']: full_data[sem]['cie'][sub] = {}
@@ -403,9 +405,9 @@ def get_student_data_from_db(user_id):
         sgpi_rows = cursor.fetchall()
         for r in sgpi_rows:
             sem, val, val_sep = r
-            if sem in full_data:
-                full_data[sem]['sgpi'] = val
-                full_data[sem]['sgpi_separated'] = val_sep
+            if sem not in full_data: full_data[sem] = {'cie': {}, 'att': {}, 'sgpi': None}
+            full_data[sem]['sgpi'] = val
+            full_data[sem]['sgpi_separated'] = val_sep
 
         if not full_data: return None
 
@@ -515,39 +517,33 @@ def set_user_division_by_id(user_id, division):
         conn.close()
 
 
+def _leaderboard_where(semester, department, division):
+    conditions = ["sp.semester = %s", "COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL"]
+    params = [semester]
+    if department and department != "NA":
+        conditions.append("u.department = %s")
+        params.append(department)
+    if division and division != "NA":
+        conditions.append("u.division = %s")
+        params.append(division)
+    return " AND ".join(conditions), params
+
+
 def get_semester_leaderboard_pg(semester, department=None, division=None, limit=10):
     conn = get_db_connection()
     if not conn: return []
     cursor = conn.cursor()
     try:
-        # COALESCE uses sgpi_separated if available, otherwise falls back to sgpi
-        select_clause = "SELECT u.full_name, COALESCE(sp.sgpi_separated, sp.sgpi) as sgpa"
-
-        # Build WHERE conditions dynamically
-        conditions = ["sp.semester = %s", "COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL"]
-        params = [semester]
-
-        if department and department != "NA":
-            conditions.append("u.department = %s")
-            params.append(department)
-
-        if division and division != "NA":
-            conditions.append("u.division = %s")
-            params.append(division)
-
+        where_clause, params = _leaderboard_where(semester, department, division)
         params.append(limit)
-
-        where_clause = " AND ".join(conditions)
-
         cursor.execute(f"""
-            {select_clause}
+            SELECT u.full_name, COALESCE(sp.sgpi_separated, sp.sgpi) AS sgpa
             FROM student_performance sp
             JOIN users u ON sp.user_id = u.id
             WHERE {where_clause}
             ORDER BY sgpa DESC
             LIMIT %s
         """, tuple(params))
-
         return cursor.fetchall()
     except Exception as e:
         print(f"Error fetching leaderboard: {e}")
@@ -561,19 +557,7 @@ def get_student_rank_pg(semester, full_name, department=None, division=None):
     if not conn: return None
     cursor = conn.cursor()
     try:
-        conditions = ["sp.semester = %s", "COALESCE(sp.sgpi_separated, sp.sgpi) IS NOT NULL"]
-        params = [semester]
-
-        if department and department != "NA":
-            conditions.append("u.department = %s")
-            params.append(department)
-
-        if division and division != "NA":
-            conditions.append("u.division = %s")
-            params.append(division)
-
-        where_clause = " AND ".join(conditions)
-
+        where_clause, params = _leaderboard_where(semester, department, division)
         cursor.execute(f"""
             SELECT rank, full_name, sgpa FROM (
                 SELECT
@@ -586,7 +570,6 @@ def get_student_rank_pg(semester, full_name, department=None, division=None):
             ) ranked
             WHERE full_name = %s
         """, tuple(params) + (full_name,))
-
         row = cursor.fetchone()
         return {"rank": row[0], "sgpa": row[2]} if row else None
     except Exception as e:
@@ -599,10 +582,10 @@ def get_student_rank_pg(semester, full_name, department=None, division=None):
 
 def create_feedback_table_pg():
     conn = get_db_connection()
-    if conn:
-        cur = conn.cursor()
-        # Create table if not exists
-        cur.execute("""
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
             CREATE TABLE IF NOT EXISTS feedback (
                 id SERIAL PRIMARY KEY,
                 username TEXT,
@@ -613,21 +596,27 @@ def create_feedback_table_pg():
             );
         """)
         conn.commit()
+    except Exception as e:
+        print(f"Error creating feedback table: {e}")
+    finally:
+        cursor.close()
         conn.close()
 
 def save_feedback_pg(username, email, message, rating):
     conn = get_db_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO feedback (username, email, message, rating) 
-                VALUES (%s, %s, %s, %s)
-            """, (username, email, message, rating))
-            conn.commit()
-            conn.close()
-            return True
-        except Exception as e:
-            print(f"DB Error: {e}")
-            return False
-    return False
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            INSERT INTO feedback (username, email, message, rating)
+            VALUES (%s, %s, %s, %s)
+        """, (username, email, message, rating))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"DB Error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
