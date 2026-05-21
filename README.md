@@ -28,8 +28,6 @@ The official Contineo student portal is tedious to use every day:
 
 ## Features
 
-## Features
-
 - **One-Time Registration** — Save your PRN & DOB once with secure bcrypt-based authentication.
 - **Unified Dashboard** — Access odd and even semester data in one place.
 - **Smart Attendance Insights** — Know how many lectures you can miss or need to attend to maintain 75%.
