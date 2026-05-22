@@ -880,20 +880,46 @@ if st.session_state.student_data_result:
                     st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
 
                 # --- SGPA Display ---
-                # Showing only the "Total Marks" SGPA for now — cleaner for students.
-                # The component-wise (separated) SGPA is still calculated and saved to DB
-                # for backward compatibility, just not shown until we confirm which method
-                # the college officially uses.
+                # Default view is Total Marks. The ⇆ button lets students peek at
+                # the component-wise breakdown if they're curious — but leaderboard
+                # always uses Total Marks either way.
                 # TODO: once official grading method is confirmed, decide which to keep
-                if sgpa_result:
-                    st.metric("Estimated SGPA", f"{sgpa_result['sgpa']:.2f}")
-                    st.caption("All marks per subject are added up into one total percentage, then a grade point is assigned based on that. Each subject's grade point is weighted by its credit count to get the final SGPA.")
-                    with st.expander("View Subject Breakdown"):
-                        for b in sgpa_result["breakdown"]:
-                            st.markdown(f"- {b}")
+                if "sgpa_view_separated" not in st.session_state:
+                    st.session_state.sgpa_view_separated = False
 
-                # sgpa_sep_result is intentionally not displayed here
-                # keeping the variable alive so calculate_and_save_sgpa still saves it
+                metric_col, toggle_col = st.columns([5, 1])
+
+                with toggle_col:
+                    st.markdown("<div style='padding-top:24px'>", unsafe_allow_html=True)
+                    if st.button("⇆", help="Switch between Total Marks and Component-Wise SGPA", key="sgpa_toggle"):
+                        st.session_state.sgpa_view_separated = not st.session_state.sgpa_view_separated
+                        st.rerun()
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                using_sep = st.session_state.sgpa_view_separated and sgpa_sep_result is not None
+                active_sgpa = sgpa_sep_result if using_sep else sgpa_result
+
+                if active_sgpa:
+                    with metric_col:
+                        label = "Estimated SGPA (Component-Wise)" if using_sep else "Estimated SGPA"
+                        st.metric(label, f"{active_sgpa['sgpa']:.2f}")
+
+                    if using_sep:
+                        st.caption(
+                            "Theory, Tutorial and Practical marks are graded independently. "
+                            "Each component's grade point is weighted by its own credit (e.g. TH=2, TU=1, PR=1). "
+                        )
+                    else:
+                        st.caption(
+                            "All marks per subject are added up into one total percentage, then a grade point is assigned. "
+                            "Each subject's grade point is weighted by its credit count to get the final SGPA. "
+                            "The leaderboard also ranks students using this method."
+                        )
+
+                    expander_label = "View Subject Breakdown (Component-Wise)" if using_sep else "View Subject Breakdown"
+                    with st.expander(expander_label):
+                        for b in active_sgpa["breakdown"]:
+                            st.markdown(f"- {b}")
 
                 if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
                     user_dept = user.get("department", "NA")
@@ -996,12 +1022,12 @@ if st.session_state.student_data_result:
                         status = "N/A"
                         if p >= 75:
                             miss = math.floor((att / 0.75) - cond)
-                            status = f"✅ Safe by {int(miss)} class(es)"
+                            miss_word = "class" if miss == 1 else "classes"
+                            status = f"✅ Safe by {int(miss)} {miss_word}"
                         else:
                             need = math.ceil(((0.75 * cond) - att) / 0.25)
-                            status = f"⚠️ Low. Attend {int(need)} class(es)"
-                        # tried showing "can miss X classes" and "need X classes" in same cell
-                        # but it looked too cluttered on mobile, keeping it simple for now
+                            need_word = "class" if need == 1 else "classes"
+                            status = f"⚠️ Low. Attend {int(need)} {need_word}"
 
                         att_display.append(
                             {"Subject": display_name, "Attendance": f"{p:.1f}%", "Status(For 75%)": status})
