@@ -332,8 +332,6 @@ def update_attendance_in_db_pg(user_id, semester, attendance_data):
 
 def save_student_sgpi_pg(user_id, semester, sgpi, grade_details, sgpi_separated=None, grade_details_separated=None):
     """Saves SGPI."""
-    # keeping both sgpi and sgpi_separated columns even though we only display sgpi now
-    # don't want to lose the separated data in case we need it later
     conn = get_db_connection()
     if not conn: return False
     cursor = conn.cursor()
@@ -519,11 +517,9 @@ def set_user_division_by_id(user_id, division):
         conn.close()
 
 
-def _leaderboard_where(semester, department, division):
-    # Using sgpi (total marks method) as the single leaderboard SGPA now.
-    # sgpi_separated is still stored in the DB but not used here anymore.
-    # FIXME: if we ever confirm the official grading method, update this accordingly
-    conditions = ["sp.semester = %s", "sp.sgpi IS NOT NULL"]
+def _leaderboard_where(semester, department, division, use_separated=False):
+    sgpa_col = "COALESCE(sp.sgpi_separated, sp.sgpi)" if use_separated else "sp.sgpi"
+    conditions = ["sp.semester = %s", f"{sgpa_col} IS NOT NULL"]
     params = [semester]
     if department and department != "NA":
         conditions.append("u.department = %s")
@@ -531,18 +527,18 @@ def _leaderboard_where(semester, department, division):
     if division and division != "NA":
         conditions.append("u.division = %s")
         params.append(division)
-    return " AND ".join(conditions), params
+    return " AND ".join(conditions), params, sgpa_col
 
 
-def get_semester_leaderboard_pg(semester, department=None, division=None, limit=10):
+def get_semester_leaderboard_pg(semester, department=None, division=None, limit=10, use_separated=False):
     conn = get_db_connection()
     if not conn: return []
     cursor = conn.cursor()
     try:
-        where_clause, params = _leaderboard_where(semester, department, division)
+        where_clause, params, sgpa_col = _leaderboard_where(semester, department, division, use_separated)
         params.append(limit)
         cursor.execute(f"""
-            SELECT u.full_name, sp.sgpi AS sgpa
+            SELECT u.full_name, {sgpa_col} AS sgpa
             FROM student_performance sp
             JOIN users u ON sp.user_id = u.id
             WHERE {where_clause}
@@ -557,18 +553,18 @@ def get_semester_leaderboard_pg(semester, department=None, division=None, limit=
         cursor.close()
         conn.close()
 
-def get_student_rank_pg(semester, full_name, department=None, division=None):
+def get_student_rank_pg(semester, full_name, department=None, division=None, use_separated=False):
     conn = get_db_connection()
     if not conn: return None
     cursor = conn.cursor()
     try:
-        where_clause, params = _leaderboard_where(semester, department, division)
+        where_clause, params, sgpa_col = _leaderboard_where(semester, department, division, use_separated)
         cursor.execute(f"""
             SELECT rank, full_name, sgpa FROM (
                 SELECT
                     u.full_name,
-                    sp.sgpi AS sgpa,
-                    RANK() OVER (ORDER BY sp.sgpi DESC) AS rank
+                    {sgpa_col} AS sgpa,
+                    RANK() OVER (ORDER BY {sgpa_col} DESC) AS rank
                 FROM student_performance sp
                 JOIN users u ON sp.user_id = u.id
                 WHERE {where_clause}

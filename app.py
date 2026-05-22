@@ -891,7 +891,7 @@ if st.session_state.student_data_result:
 
                 with toggle_col:
                     st.markdown("<div style='padding-top:24px'>", unsafe_allow_html=True)
-                    if st.button("⇆", help="Switch between Total Marks and Component-Wise SGPA", key="sgpa_toggle"):
+                    if st.button("⇆", help="Switch between Total Marks Per Subject SGPA and Component-Wise SGPA", key="sgpa_toggle"):
                         st.session_state.sgpa_view_separated = not st.session_state.sgpa_view_separated
                         st.rerun()
                     st.markdown("</div>", unsafe_allow_html=True)
@@ -921,9 +921,21 @@ if st.session_state.student_data_result:
                         for b in active_sgpa["breakdown"]:
                             st.markdown(f"- {b}")
 
-                if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
+                if "lb_view_separated" not in st.session_state:
+                    st.session_state.lb_view_separated = False
+
+                lb_col, lb_toggle_col, _ = st.columns([2, 1, 6])
+                with lb_col:
+                    show_lb = st.button(f"🏆 Sem {selected_sem} Leaderboard")
+                with lb_toggle_col:
+                    if st.button("⇆", help="Switch leaderboard between Total Marks Per Subject SGPA and Component-Wise SGPA", key="lb_toggle"):
+                        st.session_state.lb_view_separated = not st.session_state.lb_view_separated
+                        st.rerun()
+
+                if show_lb:
                     user_dept = user.get("department", "NA")
                     user_div = user.get("division", "NA")
+                    lb_sep = st.session_state.lb_view_separated
 
 
                     def render_leaderboard_table(lb, current_user_full_name):
@@ -964,8 +976,19 @@ if st.session_state.student_data_result:
 
                     lb_tabs = st.tabs(tabs_to_show)
 
+                    if lb_sep:
+                        st.caption(
+                            "Rankings based on Component-Wise SGPA — Theory, Tutorial and Practical "
+                            "graded independently, each weighted by its own credit."
+                        )
+                    else:
+                        st.caption(
+                            "Rankings based on Total Marks SGPA — all marks per subject combined "
+                            "into one percentage before grading."
+                        )
+
                     def show_rank_banner(sem, full_name, department=None, division=None):
-                        rank_info = db_utils.get_student_rank_pg(sem, full_name, department=department, division=division)
+                        rank_info = db_utils.get_student_rank_pg(sem, full_name, department=department, division=division, use_separated=lb_sep)
                         if rank_info:
                             st.markdown(
                                 f'<div style="width:100%;box-sizing:border-box;margin-bottom:14px;padding:12px 16px;border-radius:10px;'
@@ -981,20 +1004,20 @@ if st.session_state.student_data_result:
                         with lb_tabs[tab_idx]:
                             show_rank_banner(selected_sem, user["full_name"], department=user_dept, division=user_div)
                             div_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept,
-                                                                          division=user_div)
+                                                                          division=user_div, use_separated=lb_sep)
                             render_leaderboard_table(div_lb, user["full_name"])
                         tab_idx += 1
 
                     if user_dept and user_dept != "NA":
                         with lb_tabs[tab_idx]:
                             show_rank_banner(selected_sem, user["full_name"], department=user_dept)
-                            dept_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept)
+                            dept_lb = db_utils.get_semester_leaderboard_pg(selected_sem, department=user_dept, use_separated=lb_sep)
                             render_leaderboard_table(dept_lb, user["full_name"])
                         tab_idx += 1
 
                     with lb_tabs[tab_idx]:
                         show_rank_banner(selected_sem, user["full_name"])
-                        grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem)
+                        grand_lb = db_utils.get_semester_leaderboard_pg(selected_sem, use_separated=lb_sep)
                         render_leaderboard_table(grand_lb, user["full_name"])
             else:
                 st.info("Could not calculate SGPA: Total credits are zero.")
