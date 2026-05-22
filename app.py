@@ -84,6 +84,7 @@ def scrape_fresh_data(user_details, semester_types=None):
     - Default: Uses the Semester found on the Welcome Page (e.g., 7).
     - Exception: Moves 'CSC8...', 'CSDC8...', 'CSDL8...' subjects to Semester 8.
     """
+    # TODO: add retry logic here — Contineo portal goes down randomly during peak hours
     if semester_types is None:
         semester_types = ["even"]
 
@@ -873,32 +874,26 @@ if st.session_state.student_data_result:
             sgpa_sep_result = compute_sgpa_separated(marks_data)
 
             if sgpa_result or sgpa_sep_result:
-                if sgpa_sep_result:
-                    for warn_sub in sgpa_sep_result["fallback_warnings"]:
-                        st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
-                elif sgpa_result:
-                    for warn_sub in sgpa_result["fallback_warnings"]:
-                        st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
+                # show fallback warnings if any subject had to use estimated credits
+                active_result = sgpa_result or sgpa_sep_result
+                for warn_sub in active_result["fallback_warnings"]:
+                    st.warning(f"⚠️ Using fallback credit calculation for {warn_sub}.")
 
-                c1, c2 = st.columns(2)
+                # --- SGPA Display ---
+                # Showing only the "Total Marks" SGPA for now — cleaner for students.
+                # The component-wise (separated) SGPA is still calculated and saved to DB
+                # for backward compatibility, just not shown until we confirm which method
+                # the college officially uses.
+                # TODO: once official grading method is confirmed, decide which to keep
+                if sgpa_result:
+                    st.metric("Estimated SGPA", f"{sgpa_result['sgpa']:.2f}")
+                    st.caption("All marks per subject are added up into one total percentage, then a grade point is assigned based on that. Each subject's grade point is weighted by its credit count to get the final SGPA.")
+                    with st.expander("View Subject Breakdown"):
+                        for b in sgpa_result["breakdown"]:
+                            st.markdown(f"- {b}")
 
-                with c1:
-                    if sgpa_sep_result:
-                        st.metric("Estimated SGPA (Using Separate Components)", f"{sgpa_sep_result['sgpa']:.2f}")
-                        st.info(
-                            "Component-Wise: Calculates Theory, Tutorial & Practical independently. Each component's grade point is weighted by its exact credit (e.g., TH=2, TU=1, PR=1). Matches the official curriculum structure.")
-                        with st.expander("View Subject Breakdown (Separated)"):
-                            for b in sgpa_sep_result["breakdown"]:
-                                st.markdown(f"- {b}")
-
-                with c2:
-                    if sgpa_result:
-                        st.metric("Estimated SGPA (Using Total Marks)", f"{sgpa_result['sgpa']:.2f}")
-                        st.info(
-                            "Aggregates all marks per subject into one percentage before applying total credits. Kept for backward compatibility while the college's official method is verified. Use Separated SGPA as primary.")
-                        with st.expander("View Subject Breakdown (Total)"):
-                            for b in sgpa_result["breakdown"]:
-                                st.markdown(f"- {b}")
+                # sgpa_sep_result is intentionally not displayed here
+                # keeping the variable alive so calculate_and_save_sgpa still saves it
 
                 if st.button(f"🏆 Sem {selected_sem} Leaderboard"):
                     user_dept = user.get("department", "NA")
@@ -1005,6 +1000,8 @@ if st.session_state.student_data_result:
                         else:
                             need = math.ceil(((0.75 * cond) - att) / 0.25)
                             status = f"⚠️ Low. Attend {int(need)} class(es)"
+                        # tried showing "can miss X classes" and "need X classes" in same cell
+                        # but it looked too cluttered on mobile, keeping it simple for now
 
                         att_display.append(
                             {"Subject": display_name, "Attendance": f"{p:.1f}%", "Status(For 75%)": status})
